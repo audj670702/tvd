@@ -1,4 +1,4 @@
-/* TVD · adaptador público HUB/EO v0.2.0. Nunca acepta el catálogo global de CFCX. */
+/* TVD · adaptador público HUB/EO v0.3.0. Nunca acepta el catálogo global de CFCX. */
 (function () {
   'use strict';
   function programaDe(item, desfase) {
@@ -23,10 +23,20 @@
       return { codigo:codigo,numero:codigo.slice(2),nombre:String(c.nombre||codigo).slice(0,100),
         tipo:tipo==='VPS'?'hls':'youtube',url:tipo==='VPS'&&/^https:\/\//i.test(url)?url:'',
         playlist:tipo==='VIRTUAL'&&/^[\w-]{8,}$/.test(playlist)?playlist:'',
-        programa:tipo==='VIRTUAL'?programaDe(c,desfase):null,espacio:c.espacio||null,
+        programa:tipo==='VIRTUAL'?programaDe(c,desfase):null,espacio:c.espacio||null,esInsigniaEO:c.esInsigniaEO===true,
         eo:c.eo&&typeof c.eo.nombre==='string'?{nombre:c.eo.nombre,codigoEO:c.eo.codigoEO}:null,
         relacion:c.relacion==='COMPARTIDO'?'COMPARTIDO':'PROPIO',orden:Number(c.orden)||Number(codigo.slice(2)) };
     }).filter(Boolean).sort(function(a,b){return a.orden-b.orden || a.codigo.localeCompare(b.codigo);});
+  }
+  function directorio(items) {
+    var vistos=new Set();
+    return (Array.isArray(items)?items:[]).filter(function(e){
+      if(!e || !/^EO\d{3,}$/.test(e.codigoEO||'') || vistos.has(e.codigoEO) ||
+        typeof e.nombre!=='string' || !e.nombre.trim() || !e.canalInsignia ||
+        !/^CH\d{2,}$/.test(e.canalInsignia.codigo||'') || typeof e.canalInsignia.nombre!=='string')return false;
+      vistos.add(e.codigoEO);return true;
+    }).map(function(e){return {codigoEO:e.codigoEO,nombre:e.nombre.slice(0,120),logo:/^https:\/\//i.test(e.logo||'')?e.logo:'',
+      canalInsignia:{codigo:e.canalInsignia.codigo,nombre:e.canalInsignia.nombre.slice(0,120)}};});
   }
   function validar(datos, eo) {
     if (!datos || datos.ok!==true || !Array.isArray(datos.canales)) throw new Error('RESPUESTA_INVALIDA');
@@ -35,6 +45,7 @@
     if (!hub && (!datos.eo || typeof datos.eo.nombre!=='string' || !datos.eo.nombre.trim())) throw new Error('IDENTIDAD_NO_CONFIRMADA');
     var servidor=Date.parse(datos.ahora);
     return { canales:normalizar(datos.canales,Number.isFinite(servidor)?servidor-Date.now():0),
+      directorioEO:hub?directorio(datos.directorioEO):[],directorioDisponible:hub&&Array.isArray(datos.directorioEO),
       contexto:datos.contexto,eo:hub?{nombre:'TV Digital',logo:''}:datos.eo,contenido:datos.contenido || {},origen:'PANEL_TV' };
   }
   async function cargar(cfg, contexto) {
@@ -49,5 +60,5 @@
       return validar(await r.json(),contexto.eo);
     } finally { clearTimeout(timer); }
   }
-  window.TVD_CANALES={cargar:cargar,validar:validar,normalizar:normalizar};
+  window.TVD_CANALES={cargar:cargar,validar:validar,normalizar:normalizar,directorio:directorio};
 })();

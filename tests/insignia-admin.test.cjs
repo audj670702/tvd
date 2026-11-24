@@ -1,0 +1,20 @@
+const {test}=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
+const root=path.join(__dirname,'..');
+function admin(){
+ const data={QTD_Administradores:[{memberId:'adm',activo:true}],SCaD_EO:[{app:'TVD',activo:true,codigoEO:'EO013',codigoContexto:'EO013-TVD-DEMO'}],canales:[{_id:'uno',codigo:'CH01',enteOperador:'EO013-TVD-DEMO',activo:true,tipo:'VPS',rutaHls:'https://senal.test/live.m3u8',tokenVps:'secreto'},{_id:'dos',codigo:'CH02',enteOperador:'EO013-TVD-DEMO',activo:true,tipo:'VPS'}],bitacora:[]};
+ let login=true;
+ const wixData={query(c){const f=[];const q={eq:(k,v)=>(f.push(x=>x[k]===v),q),ascending:()=>q,limit:()=>q,async find(){return {items:(data[c]||[]).filter(x=>f.every(fn=>fn(x))),hasNext:()=>false}}};return q},async get(c,id){return (data[c]||[]).find(x=>x._id===id)},async update(c,x){data[c][data[c].findIndex(y=>y._id===x._id)]={...x};return x},async insert(c,x){data[c].push(x);return x}};
+ const ctx={wixData,webMethod:(_,f)=>f,Permissions:{SiteMember:1,Anyone:0},currentMember:{async getMember(){return login?{_id:'adm'}:null}},COL:{CANALES:'canales',BITACORA:'bitacora'},OPC:{},texto:(x,n)=>String(x||'').slice(0,n),normalizarCodigo:x=>String(x||'').toUpperCase(),ORIGEN_CICLO:'ciclo',console};vm.createContext(ctx);
+ vm.runInContext(fs.readFileSync(root+'/wix/gestion/tvdPanel_web_v2.4.0.txt','utf8').replace(/import[\s\S]*?from '[^']+';/g,'').replace(/export /g,'')+';globalThis.api={tvdGuardarCanal,configuracionDistribucion};',ctx);
+ const guardar=(id,cambios)=>{const c=data.canales.find(x=>x._id===id),prev=JSON.parse(JSON.stringify(ctx.api.configuracionDistribucion(c)));return ctx.api.tvdGuardarCanal({accion:'GUARDAR_DISTRIBUCION',_id:id,codigo:c.codigo,...prev,...cambios,estadoAnterior:prev})};
+ return {data,guardar,salir:()=>login=false};
+}
+test('marca una insignia y conserva configuración técnica',async()=>{const a=admin(),r=await a.guardar('uno',{esInsigniaEO:true,publicarHub:true});assert.equal(r.canal.esInsigniaEO,true);assert.equal(a.data.canales[0].rutaHls,'https://senal.test/live.m3u8');assert.equal(a.data.canales[0].tokenVps,'secreto');});
+test('impide una segunda insignia; permite cambiarla retirando la anterior',async()=>{const a=admin();await a.guardar('uno',{esInsigniaEO:true});await assert.rejects(()=>a.guardar('dos',{esInsigniaEO:true}),/EO_YA_TIENE_INSIGNIA/);await a.guardar('uno',{esInsigniaEO:false});await a.guardar('dos',{esInsigniaEO:true});assert.equal(a.data.canales.filter(c=>c.esInsigniaEO===true).length,1);});
+test('rechaza insignia sin propietaria, inactiva o sin permiso administrativo',async()=>{const a=admin();await assert.rejects(()=>a.guardar('uno',{esInsigniaEO:true,enteOperador:''}),/INSIGNIA_REQUIERE_EO/);a.data.canales[0].activo=false;await assert.rejects(()=>a.guardar('uno',{esInsigniaEO:true}),/CANAL_ACTIVO/);a.salir();await assert.rejects(()=>a.guardar('dos',{esInsigniaEO:true}),/NO_AUTORIZADO/);});
+test('HTML administrativo envía el cambio de insignia con el protocolo vigente',()=>{
+ const {JSDOM}=require('jsdom'),html=fs.readFileSync(root+'/wix/gestion/TVD_GestionCanales_HTML_v0.4.0.txt','utf8'),dom=new JSDOM(html,{runScripts:'outside-only',url:'https://iframe.test/'}),w=dom.window,mensajes=[];
+ w.postMessage=m=>mensajes.push(m);w.eval(html.match(/<script>([\s\S]*?)<\/script>/)[1]);
+ w.dispatchEvent(new w.MessageEvent('message',{source:w,data:{tipo:'TVD_GC_ESTADO',version:'0.3.0',estado:'OK',mensaje:'Catálogo',canales:[{_id:'uno',codigo:'CH01',nombre:'Canal',tipo:'VPS',activo:true,enteOperador:'EO013-TVD-DEMO',eoCompartidas:[],publicarHub:true,esInsigniaEO:false}],eos:[{codigoEO:'EO013',codigoContexto:'EO013-TVD-DEMO',nombre:'DEMO'}]}}));
+ w.document.querySelector('[aria-label="Canal insignia CH01"]').click();const ultimo=mensajes.at(-1);assert.equal(ultimo.tipo,'TVD_GC_GUARDAR_DISTRIBUCION');assert.equal(ultimo.esInsigniaEO,true);assert.equal(ultimo.version,'0.3.0');dom.window.close();
+});

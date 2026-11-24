@@ -14,7 +14,7 @@
   var STORE = window.CFCX_STORE;
   var view = document.getElementById('view');
   var DATA = {canales:[],espacios:[],programas:[],cupones:[],articulos:[]};
-  var errorCanales='', consultaEnCurso=false, canalPendiente='';
+  var errorCanales='', consultaEnCurso=false;
   var monitorActual = null;
   var origenCanales = '';
   var limpieza = []; // funciones a ejecutar al salir de una pantalla
@@ -122,24 +122,28 @@
   function direccionamiento() {
     var hub=contexto.modo==='HUB';
     return '<section class="section context-direction"><a class="row" '+(hub?'href="#" id="abrirCanalesEO" aria-haspopup="dialog"':'href="'+esc(enlaceContexto(''))+'"')+'>'+
-      '<span class="thumb">'+I.grid+'</span><span class="meta"><span class="kicker">'+(hub?'TVD HUB':'EXPLORAR')+'</span><span class="title" style="display:block">'+(hub?'Canales de las EO':'TVD HUB')+'</span></span><span class="chev">'+I.chev+'</span></a></section>';
-  }
-  function elegirCanal(codigo) {
-    canalPendiente=codigo;
-    if ((location.hash||'#/inicio')!=='#/inicio') location.hash='/inicio';
-    else router();
+      '<span class="thumb">'+I.grid+'</span><span class="meta"><span class="kicker">'+(hub?'TVD HUB':'EXPLORAR')+'</span><span class="title" style="display:block">'+(hub?'Canales insignia de las EO':'TVD HUB')+'</span></span><span class="chev">'+I.chev+'</span></a></section>';
   }
   var dialogoEO=document.getElementById('canalesEO');
   function pintarSelectorEO() {
     var filtro=norm(document.getElementById('buscarCanalEO').value);
-    var canales=(DATA.canales||[]).filter(function(c){return norm(c.codigo+' '+c.nombre+' '+(c.eo&&c.eo.nombre||'')).includes(filtro);});
+    var empresas=(DATA.directorioEO||[]).filter(function(e){return norm(e.nombre+' '+e.canalInsignia.nombre+' '+e.canalInsignia.codigo).includes(filtro);});
     var lista=document.getElementById('listaCanalesEO');lista.replaceChildren();
-    canales.forEach(function(c){
-      var boton=document.createElement('button');boton.type='button';boton.className='row';
-      boton.innerHTML='<span class="thumb">'+I.play+'</span><span class="meta"><span class="kicker">'+esc(c.codigo)+(c.eo?' · '+esc(c.eo.nombre):'')+'</span><span class="title" style="display:block">'+esc(c.nombre)+'</span></span><span class="chev">'+I.chev+'</span>';
-      boton.onclick=function(){dialogoEO.close();elegirCanal(c.codigo);};lista.append(boton);
+    empresas.forEach(function(e){
+      var enlace=document.createElement('a');enlace.className='row';enlace.href=enlaceContexto(e.codigoEO);
+      enlace.setAttribute('aria-label','Entrar a '+e.nombre+' · '+e.canalInsignia.nombre);
+      var imagen=/^https:\/\//i.test(e.logo||'')?'<img class="context-eo-logo" src="'+esc(e.logo)+'" alt="">':I.play;
+      enlace.innerHTML='<span class="thumb">'+imagen+'</span><span class="meta"><span class="kicker">CANAL INSIGNIA · '+esc(e.canalInsignia.codigo)+'</span><span class="title" style="display:block">'+esc(e.canalInsignia.nombre)+'</span><span class="muted" style="display:block;font-size:12px">'+esc(e.nombre)+'</span></span><span class="chev">'+I.chev+'</span>';
+      lista.append(enlace);
     });
-    if(!canales.length){var aviso=document.createElement('p');aviso.className='muted';aviso.textContent=errorCanales?'Los canales no están disponibles en este momento.':'No hay canales disponibles con este criterio.';lista.append(aviso);}
+    if(!empresas.length){var aviso=document.createElement('p');aviso.className='muted';aviso.textContent=errorCanales||!DATA.directorioDisponible?'El directorio de empresas no está disponible en este momento.':filtro?'No hay empresas con este criterio.':'Todavía no hay empresas publicadas en el directorio.';lista.append(aviso);}
+  }
+  function canalInicial() {
+    if(contexto.modo!=='EO')return '';
+    var preferido=STORE.getCanalPredeterminado();
+    if(DATA.canales.some(function(c){return c.codigo===preferido;}))return '';
+    var insignias=DATA.canales.filter(function(c){return c.esInsigniaEO===true;});
+    return insignias.length===1?insignias[0].numero:'';
   }
   document.getElementById('buscarCanalEO').oninput=pintarSelectorEO;
   document.getElementById('limpiarCanalEO').onclick=function(){document.getElementById('buscarCanalEO').value='';pintarSelectorEO();};
@@ -278,12 +282,11 @@
       limpieza.push(function(){clearInterval(timerInicio);});
     }
     var mon = new window.CFCXMonitor(document.getElementById('monitor'), {
-      canales: DATA.canales, mostrarCanales: true
+      canales: DATA.canales, mostrarCanales: true, inicial:canalInicial()
     });
     monitorActual = mon;
     limpieza.push(function () { if (monitorActual === mon) monitorActual = null; mon.destroy(); });
     var acceso=document.getElementById('abrirCanalesEO');if(acceso)acceso.onclick=function(e){e.preventDefault();pintarSelectorEO();dialogoEO.showModal();};
-    if(canalPendiente){var pos=DATA.canales.findIndex(function(c){return c.codigo===canalPendiente;});if(pos>=0)mon.sintonizar(pos,false);canalPendiente='';}
     actualizarLeyendaCanales();
   };
 
@@ -555,7 +558,7 @@
     if(errorCanales){var b=document.createElement('button');b.className='pill context-retry';b.type='button';b.textContent='Reintentar';b.onclick=consultarContexto;el.append(' ',b);}
   }
   function aplicarDatos(nuevo) {
-    DATA.canales=nuevo.canales;DATA.identidad=nuevo.eo;
+    DATA.canales=nuevo.canales;DATA.identidad=nuevo.eo;DATA.directorioEO=nuevo.directorioEO||[];DATA.directorioDisponible=nuevo.directorioDisponible===true;
     var contenido=nuevo.contenido || {};
     ['espacios','programas','cupones','articulos'].forEach(function(k){DATA[k]=Array.isArray(contenido[k])?contenido[k]:[];});
     DATA.articulos=DATA.articulos.slice().sort(function(a,b){return (Date.parse(b.fecha||b.fechaPublicacion)||0)-(Date.parse(a.fecha||a.fechaPublicacion)||0);});

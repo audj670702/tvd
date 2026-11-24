@@ -1,4 +1,4 @@
-# TV Digital · App HUB / EO · v0.2.0
+# TV Digital · App HUB / EO · v0.3.0
 
 La app usa el modelo visual y las pantallas de CFCX: cabecera, tipografías, monitor, revista de Inicio, portadas/hemeroteca, Videoteca, Arcade, Mi app, temas y navegación inferior. `css/app.css` es una copia exacta del original. Las adaptaciones se concentran en identidad, fuentes públicas por contexto y el componente de dirección HUB/EO.
 
@@ -9,7 +9,7 @@ La app usa el modelo visual y las pantallas de CFCX: cabecera, tipografías, mon
 | https://tvd.scad.mx/ | HUB: canales autorizados para el HUB; acceso «Canales de las EO» con búsqueda y selección. |
 | https://tvd.scad.mx/?eo=EO013 | EO: identidad de la empresa, canales propios/compartidos y acceso «TVD HUB». |
 
-Los dos accesos de dirección usan el mismo lugar y diseño. Elegir un canal en el HUB sintoniza ese canal y conserva el modo HUB. El enlace difundido por una EO abre directamente su app, sin formularios de empresa, login ni validación del viewer.
+Los dos accesos de dirección usan el mismo lugar y diseño. Elegir una EO en el directorio del HUB abre su app y su canal insignia. El selector integrado en el monitor cambia canales dentro del contexto actual. El enlace difundido por una EO abre directamente su app, sin formularios de empresa, login ni validación del viewer.
 
 El portal comercial está separado en https://www.scad.mx/tvdigital y tiene su propio diseño y propósito. Los paneles administrativos mantienen su validación; no forman parte del acceso público de esta app.
 
@@ -30,8 +30,12 @@ Estas entregas ya están incluidas y no se sustituyen por archivos de frontend:
 
 | Archivo | Destino |
 |---|---|
-| `wix/tvdNucleo_v2.2.0.txt` | `backend/tvdNucleo.js` |
-| `wix/tvdPublico_v2.3.0.txt` | `backend/tvdPublico.js` |
+| `wix/tvdNucleo_v2.3.0.txt` | `backend/tvdNucleo.js` |
+| `wix/tvdPublico_v2.4.0.txt` | `backend/tvdPublico.js` |
+
+Instalar también, en este orden, `wix/gestion/tvdPanel_web_v2.4.0.txt` en `backend/tvdPanel.web.js`, `wix/gestion/TV_Digital_Velo_v2.3.0.txt` como código de página TV_Digital y `wix/gestion/TVD_GestionCanales_HTML_v0.4.0.txt` en `htmlGestionCanales`. Publicar Wix al terminar.
+
+En Gestión de canales, seleccionar la EO propietaria, marcar «Canal insignia» y «Publicar en HUB». Solo se admite una insignia activa por propietaria; para cambiarla, desmarcar y guardar la anterior antes de marcar la nueva. Compartir un canal no crea otra entrada en el directorio. Solo aparecen EOs activas de TVD con una insignia activa y autorizada para HUB. Si el backend aún no devuelve `directorioEO`, la app muestra que el directorio no está disponible.
 
 **Puente HTTP necesario:** la función existente en `backend/http-functions.js` debe reenviar `request`:
 
@@ -53,7 +57,7 @@ GitHub Pages: main / raíz, dominio `tvd.scad.mx`, HTTPS. El archivo CNAME ya pe
 
 Desarrollo: `npm ci`, `npm test`, `npm run serve`. No se requiere compilación para publicar.
 
-Pruebas incluidas: filtrado EO/HUB, exclusión de canales ajenos/inactivos y datos privados, rechazo de contexto incorrecto, programación, preferencias separadas y DOM de los dos modos. Las pruebas DOM verifican cinco pestañas, cabecera, revista, monitor, selector/filtro, sintonización sin cambiar contexto, acceso EO→HUB, rutas, tema y estados de error. Datos aislados, sin escribir en CMS.
+Pruebas incluidas: filtrado EO/HUB, exclusión de canales ajenos/inactivos y datos privados, rechazo de contexto incorrecto, programación, preferencias separadas y DOM de los dos modos. Las pruebas DOM verifican cinco pestañas, cabecera, revista, monitor, selector/filtro, navegación del directorio HUB→EO por insignia, acceso EO→HUB, rutas, tema y estados de error. Datos aislados, sin escribir en CMS.
 
 ## Procedencia
 

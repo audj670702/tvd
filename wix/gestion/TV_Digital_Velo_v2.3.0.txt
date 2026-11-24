@@ -1,0 +1,151 @@
+// TV DIGITAL · /panel-tvdigital · Velo v2.3.0
+// HTML principal: #htmlTVDPanel. Gestión: #htmlGestionCanales, #seccGestionCanales.
+import { authentication } from 'wix-members-frontend';
+import {
+  tvdAcceso, tvdListarCanales, tvdGuardarCanal, tvdParrilla,
+  tvdGuardarFila, tvdReordenarFilas, tvdCambiarActiva, tvdEliminarFila,
+  tvdTransmitirAhora, tvdListarPlaylists, tvdListarElementos,
+  tvdGuardarPlaylist, tvdEliminarPlaylist, tvdGuardarElemento,
+  tvdCambiarEstadoElemento, tvdEliminarElemento, tvdReordenarElementos,
+  tvdListarCatalogo, tvdListarSalidas, tvdGuardarSalida,
+  tvdIniciarSalida, tvdDetenerSalida
+} from 'backend/tvdPanel.web';
+const HTML = '#htmlTVDPanel';
+const GC = '#htmlGestionCanales';
+const SECCION_GC = '#seccGestionCanales';
+const VERSION_GC = '0.3.0';
+const PERMITIDOS = {
+  tvdListarCanales, tvdGuardarCanal, tvdParrilla,
+  tvdGuardarFila, tvdReordenarFilas, tvdCambiarActiva, tvdEliminarFila,
+  tvdTransmitirAhora, tvdListarPlaylists, tvdListarElementos,
+  tvdGuardarPlaylist, tvdEliminarPlaylist, tvdGuardarElemento,
+  tvdCambiarEstadoElemento, tvdEliminarElemento, tvdReordenarElementos,
+  tvdListarCatalogo, tvdListarSalidas, tvdGuardarSalida,
+  tvdIniciarSalida, tvdDetenerSalida
+};
+let autorizado = false;
+let revisionAcceso = 0;
+let consultaGC = null;
+let guardandoGC = false;
+let estadoGC = { tipo:'TVD_GC_ESTADO', version:VERSION_GC, estado:'CARGANDO', mensaje:'Validando acceso…', canales:[] };
+function enviar(mensaje) { $w(HTML).postMessage(mensaje); }
+function enviarGC(estado, mensaje, canales = [], eos = []) {
+  estadoGC = { tipo:'TVD_GC_ESTADO', version:VERSION_GC, estado, mensaje, canales, eos };
+  $w(GC).postMessage(estadoGC);
+}
+async function consultarGestionCanales() {
+  if (!autorizado) {
+    $w(GC).postMessage(estadoGC);
+    return;
+  }
+  if (consultaGC && consultaGC.revision === revisionAcceso) return consultaGC.promesa;
+  const revision = revisionAcceso;
+  enviarGC('CARGANDO','Consultando catálogo TVD…');
+  const consulta = { revision, promesa:null };
+  consultaGC = consulta;
+  consulta.promesa = (async () => {
+    try {
+      const resultado = await tvdListarCanales({gestionEO:true});
+      if (!autorizado || revision !== revisionAcceso) return;
+      if (!Array.isArray(resultado?.canales)) throw new Error('BACKEND_SIN_CANALES');
+      if (!Array.isArray(resultado?.eos)) throw new Error('BACKEND_SIN_EO_VERIFICAR_PUBLICACION');
+      const canales = resultado.canales.map(c => ({
+        _id:c._id, codigo:c.codigo, numero:c.numero, nombre:c.nombre, tipo:c.tipo, activo:c.activo === true, enteOperador:c.enteOperador || '',
+        eoCompartidas:Array.isArray(c.eoCompartidas) ? c.eoCompartidas : [], publicarHub:c.publicarHub === true,esInsigniaEO:c.esInsigniaEO === true
+      }));
+      enviarGC('OK',`${canales.length} canales · ${resultado.eos.length} EO disponibles.`,canales,resultado.eos);
+    } catch (error) {
+      if (revision !== revisionAcceso) return;
+      console.error('TVD Gestión · consulta',error);
+      enviarGC('ERROR',`No se pudo consultar el catálogo: ${String(error?.message || error || 'ERROR')}`);
+    } finally {
+      if (consultaGC === consulta) consultaGC = null;
+    }
+  })();
+  return consulta.promesa;
+}
+async function asignarGestionCanal(mensaje) {
+  if (!autorizado || guardandoGC) return;
+  const revision = revisionAcceso;
+  const canal = estadoGC.canales?.find(c => c._id === mensaje.canalId);
+  if (!canal || typeof mensaje.enteOperador !== 'string' || !Array.isArray(mensaje.eoCompartidas) || typeof mensaje.publicarHub !== 'boolean' || typeof mensaje.esInsigniaEO !== 'boolean') return;
+  guardandoGC = true;
+  const previos = estadoGC;
+  enviarGC('GUARDANDO','Guardando configuración del canal…',previos.canales,previos.eos);
+  try {
+    if (consultaGC) await consultaGC.promesa;
+    if (!autorizado || revision !== revisionAcceso) return;
+    const resultado = await tvdGuardarCanal({ accion:'GUARDAR_DISTRIBUCION', _id:canal._id, codigo:canal.codigo,
+      enteOperador:mensaje.enteOperador, eoCompartidas:mensaje.eoCompartidas, publicarHub:mensaje.publicarHub,esInsigniaEO:mensaje.esInsigniaEO,
+      estadoAnterior:{ enteOperador:canal.enteOperador || '', eoCompartidas:canal.eoCompartidas || [], publicarHub:canal.publicarHub === true,esInsigniaEO:canal.esInsigniaEO === true } });
+    if (!autorizado || revision !== revisionAcceso) return;
+    if (resultado?.ok !== true) throw new Error('GUARDADO_NO_CONFIRMADO');
+    await consultarGestionCanales();
+    if (revision === revisionAcceso && estadoGC.estado === 'OK') {
+      enviarGC('OK','Configuración guardada y catálogo actualizado.',estadoGC.canales,estadoGC.eos);
+    }
+  } catch (error) {
+    if (revision === revisionAcceso) {
+      enviarGC('ERROR',`No se completó la operación: ${String(error?.message || error)}`,previos.canales,previos.eos);
+    }
+  } finally { guardandoGC = false; }
+}
+async function enviarAcceso() {
+  const revision = ++revisionAcceso;
+  autorizado = false;
+  enviarGC('CARGANDO','Validando acceso…');
+  $w(SECCION_GC).collapse();
+  let acceso;
+  try { acceso = await tvdAcceso(); }
+  catch (error) { acceso = { autorizado:false, motivo:'ERROR' }; }
+  if (revision !== revisionAcceso) return;
+  autorizado = acceso?.autorizado === true;
+  enviar({ ...acceso, tipo:'TVD_ACCESO' });
+  if (!autorizado) {
+    enviarGC('ERROR',acceso?.motivo === 'ERROR' ? 'No se pudo validar el acceso.' : 'Acceso administrativo requerido.');
+    return;
+  }
+  $w(SECCION_GC).expand();
+  await consultarGestionCanales();
+}
+async function ejecutar(mensaje) {
+  const id = mensaje.id;
+  const metodo = Object.prototype.hasOwnProperty.call(PERMITIDOS,mensaje.metodo) ? PERMITIDOS[mensaje.metodo] : null;
+  if (typeof metodo !== 'function') {
+    enviar({ tipo:'TVD_RESP', id, ok:false, error:'METODO_NO_PERMITIDO' });
+    return;
+  }
+  try {
+    const args = Array.isArray(mensaje.args) ? mensaje.args : [];
+    const data = await metodo(...args);
+    enviar({ tipo:'TVD_RESP', id, ok:true, data });
+    if (mensaje.metodo === 'tvdGuardarCanal' && data?.ok === true) await consultarGestionCanales();
+  } catch (error) {
+    enviar({ tipo:'TVD_RESP', id, ok:false, error:String(error?.message || error || 'ERROR') });
+  }
+}
+$w.onReady(function () {
+  $w(SECCION_GC).collapse();
+  $w(GC).onMessage(async ({data:mensaje}) => {
+    if (!mensaje || mensaje.version !== VERSION_GC) return;
+    if (mensaje.tipo === 'TVD_GC_LISTO') {
+      $w(GC).postMessage(estadoGC);
+      if (autorizado) await consultarGestionCanales();
+      return;
+    }
+    if (mensaje.tipo === 'TVD_GC_CONSULTAR' && !guardandoGC) await consultarGestionCanales();
+    if (mensaje.tipo === 'TVD_GC_GUARDAR_DISTRIBUCION') await asignarGestionCanal(mensaje);
+  });
+  $w(HTML).onMessage(async ({data:mensaje}) => {
+    if (!mensaje || typeof mensaje !== 'object') return;
+    if (mensaje.tipo === 'TVD_READY') { await enviarAcceso(); return; }
+    if (mensaje.tipo === 'TVD_LOGIN') {
+      try { await authentication.promptLogin(); } catch (_) {}
+      await enviarAcceso();
+      return;
+    }
+    if (mensaje.tipo === 'TVD_CMD') await ejecutar(mensaje);
+  });
+  authentication.onLogin(() => { enviarAcceso(); });
+  enviarAcceso();
+});

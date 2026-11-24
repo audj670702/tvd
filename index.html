@@ -15,8 +15,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@600;800&family=JetBrains+Mono:wght@500;700&family=Work+Sans:wght@400;500;600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="./css/app.css?v=0.2.0">
-  <link rel="stylesheet" href="./css/contexto.css?v=0.2.0">
+  <link rel="stylesheet" href="./css/app.css?v=0.3.0">
+  <link rel="stylesheet" href="./css/contexto.css?v=0.3.0">
   <script>
     // Aplica el tema guardado antes de pintar, para evitar parpadeo.
     try {
@@ -33,7 +33,7 @@
   <header class="topbar">
     <div class="topbar-brand">
       <a href="#/inicio" class="wordmark" aria-label="TV Digital, inicio">TV <span>DIGITAL</span></a>
-      <span class="app-version" id="appVersion" aria-label="Versión de la aplicación">v0.2.0</span>
+      <span class="app-version" id="appVersion" aria-label="Versión de la aplicación">v0.3.0</span>
     </div>
     <div class="topbar-actions">
       <button type="button" class="pill install-app" id="installApp" aria-haspopup="dialog" aria-controls="installDialog" hidden>Instalar app</button>
@@ -46,7 +46,7 @@
 
   <footer class="app-footer" aria-label="Información de la aplicación">
     <span id="contextFooter">TV DIGITAL</span>
-    <span class="app-footer-version" id="footerVersion" aria-label="Versión de la aplicación">v0.2.0</span>
+    <span class="app-footer-version" id="footerVersion" aria-label="Versión de la aplicación">v0.3.0</span>
   </footer>
 
   <nav class="tabbar" aria-label="Navegación principal">
@@ -68,8 +68,9 @@
   </nav>
 
   <dialog class="install-dialog" id="canalesEO" aria-labelledby="canalesEOTitulo">
-    <div class="install-dialog-head"><h2 id="canalesEOTitulo">Canales de las EO</h2><button type="button" class="icon-btn" id="cerrarCanalesEO" aria-label="Cerrar selección">✕</button></div>
-    <div class="search-wrap"><input class="search" id="buscarCanalEO" type="search" placeholder="Buscar canal o empresa" aria-label="Buscar canal o empresa"><button class="icon-btn" id="limpiarCanalEO" aria-label="Limpiar búsqueda">✕</button></div><div class="list" id="listaCanalesEO"></div>
+    <div class="install-dialog-head"><h2 id="canalesEOTitulo">Canales insignia de las EO</h2><button type="button" class="icon-btn" id="cerrarCanalesEO" aria-label="Cerrar selección">✕</button></div>
+    <p class="note">Selecciona una empresa para entrar directamente a su app.</p>
+    <div class="search-wrap"><input class="search" id="buscarCanalEO" type="search" placeholder="Buscar empresa o canal insignia" aria-label="Buscar empresa o canal insignia"><button class="icon-btn" id="limpiarCanalEO" aria-label="Limpiar búsqueda">✕</button></div><div class="list" id="listaCanalesEO"></div>
   </dialog>
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
@@ -80,12 +81,12 @@
     </dialog>
 
   <script src="https://cdn.jsdelivr.net/npm/hls.js@1/dist/hls.min.js" defer></script>
-  <script src="./js/config.js?v=0.2.0" defer></script>
-  <script src="./js/contexto.js?v=0.2.0" defer></script>
-  <script src="./js/store.js?v=0.2.0" defer></script>
-  <script src="./js/canales.js?v=0.2.0" defer></script>
-  <script src="./js/monitor.js?v=0.2.0" defer></script>
-  <script src="./js/install.js?v=0.2.0" defer></script>
-  <script src="./js/app.js?v=0.2.0" defer></script>
+  <script src="./js/config.js?v=0.3.0" defer></script>
+  <script src="./js/contexto.js?v=0.3.0" defer></script>
+  <script src="./js/store.js?v=0.3.0" defer></script>
+  <script src="./js/canales.js?v=0.3.0" defer></script>
+  <script src="./js/monitor.js?v=0.3.0" defer></script>
+  <script src="./js/install.js?v=0.3.0" defer></script>
+  <script src="./js/app.js?v=0.3.0" defer></script>
 </body>
 </html>

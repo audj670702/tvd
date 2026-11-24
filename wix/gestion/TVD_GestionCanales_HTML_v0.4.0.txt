@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Gestión de canales</title>
+<style>
+:root{font-family:Arial,sans-serif;color:#203047;background:#f5f7fb;font-size:14px}*{box-sizing:border-box}body{margin:0;padding:16px}.panel{background:white;border:1px solid #dce3ed;border-radius:12px;padding:18px;max-width:1400px;margin:auto}header{display:flex;align-items:center;justify-content:space-between;gap:12px}h1{font-size:19px;margin:0 0 5px}p{margin:0;color:#607087;font-size:12px}.toolbar{display:flex;align-items:center;gap:8px;margin:18px 0 12px}.search{display:flex;align-items:center;border:1px solid #ccd6e3;border-radius:7px;max-width:440px;flex:1}input{width:100%;padding:10px;border:0;background:transparent;font:inherit;outline-offset:-3px}button{border:1px solid #ccd6e3;border-radius:7px;background:#fff;color:#263e60;cursor:pointer;padding:8px}button:hover{background:#edf3fa}button:disabled,select:disabled{opacity:.55;cursor:wait}.refresh{display:flex;align-items:center;gap:6px;font:inherit}.refresh svg{width:17px;height:17px}.clear{border:0;font-size:20px;padding:3px 10px}#estado{border-radius:7px;background:#edf3fa;padding:10px 12px;margin-bottom:12px;font-size:13px}#estado.error{background:#fff0ee;color:#9a2d23}#estado.ok{background:#eef8f2;color:#24633f}.scroll{overflow-x:auto}table{border-collapse:collapse;width:100%;text-align:left}th{font-size:12px;color:#66778e;background:#f7f9fc}th,td{padding:11px 10px;border-bottom:1px solid #e6ebf2}tbody tr:hover{background:#f8fbff}.num{width:32px;color:#8995a5;font-size:11px}.code{font-weight:700;white-space:nowrap}.badge{font-size:11px;border-radius:10px;padding:4px 7px;background:#eaf0f7;white-space:nowrap}.inactive{color:#8a5260;background:#fff0f2}select{font:inherit;min-width:230px;max-width:100%;border:1px solid #ccd6e3;border-radius:6px;padding:8px;color:#243950;background:#fff}footer{display:flex;justify-content:space-between;margin-top:14px;color:#8490a0;font-size:11px}.empty{text-align:center;color:#718198;padding:28px}@media(max-width:600px){body{padding:6px}.panel{padding:12px}h1{font-size:17px}select{min-width:200px}th,td{padding:10px 7px}header{align-items:flex-start}}
+details{min-width:240px;max-width:330px;border:1px solid #ccd6e3;border-radius:6px;padding:8px}summary{cursor:pointer;font-size:13px;font-weight:600}details input[type=search]{border:1px solid #dce3ed;border-radius:5px;margin:8px 0;font-size:12px}.opciones{max-height:190px;overflow:auto}.opciones label,.hub{display:flex;align-items:center;gap:7px;padding:6px 0;font-size:12px}.opciones input[type=checkbox],.hub input{width:16px;height:16px;flex:none}.hub{white-space:nowrap}.ayuda{font-size:11px;margin-top:8px;line-height:1.4}td{vertical-align:top}</style>
+</head>
+<body><main class="panel">
+<header><div><h1>Gestión de canales</h1><p>Define la propietaria, las EO que pueden mostrar el canal y su publicación en TVD HUB.</p></div><button id="recargar" class="refresh" disabled title="Actualizar catálogo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5"/><path d="M6 7a7 7 0 0 1 12-1l2 3M4 15l2 3a7 7 0 0 0 12-1"/></svg>Actualizar</button></header>
+<div class="toolbar"><div class="search"><input id="buscar" type="search" placeholder="Buscar canal o empresa…" aria-label="Buscar canal o empresa"><button id="limpiar" class="clear" title="Limpiar búsqueda" aria-label="Limpiar búsqueda">×</button></div></div>
+<div id="estado" role="status" aria-live="polite">Esperando conexión con el panel…</div>
+<div class="scroll"><table><thead><tr><th class="num">#</th><th>Canal</th><th>Nombre</th><th>Tipo</th><th>Estado</th><th>EO propietaria</th><th>Compartir con EO</th><th>TVD HUB</th><th>Canal insignia</th></tr></thead><tbody id="filas"></tbody></table></div>
+<p class="ayuda">Los cambios se guardan automáticamente. Compartir conserva una sola señal y programación. Para aparecer en el directorio, la EO necesita un canal insignia activo y autorizado en HUB. Solo se admite una insignia por EO propietaria.</p>
+<footer><span id="conteo">Sin datos recibidos</span><span>Gestión de canales · v0.4.0</span></footer>
+</main>
+<script>
+'use strict';
+const VERSION='0.3.0';
+const $=id=>document.getElementById(id);
+let canales=[],eos=[],ocupado=true,conectado=false,recibido=false,intentos=0;
+const desplegados=new Set(),filtrosEO=new Map();
+const enviar=(tipo,extra={})=>parent.postMessage({tipo,version:VERSION,...extra},'*');
+const nombreEO=contexto=>eos.find(e=>e.codigoContexto===contexto);
+function render(){
+  const filtro=$('buscar').value.trim().toLocaleLowerCase('es');
+  const visibles=canales.filter(c=>[c.codigo,c.nombre,c.tipo,c.enteOperador,nombreEO(c.enteOperador)?.nombre,...(c.eoCompartidas||[]).map(e=>nombreEO(e)?.nombre||e)].join(' ').toLocaleLowerCase('es').includes(filtro));
+  $('filas').replaceChildren();
+  if(!visibles.length){const tr=document.createElement('tr'),td=document.createElement('td');td.colSpan=9;td.className='empty';td.textContent=recibido?(canales.length?'Sin coincidencias.':'No hay canales registrados.'):'Esperando catálogo…';tr.append(td);$('filas').append(tr);}
+  visibles.forEach((c,i)=>{
+    const tr=document.createElement('tr');
+    for(const [valor,clase] of [[String(i+1),'num'],[c.codigo,'code'],[c.nombre,''],[c.tipo,'']]){const td=document.createElement('td');td.textContent=valor||'';td.className=clase;tr.append(td);}
+    const estado=document.createElement('td'),badge=document.createElement('span');badge.className='badge'+(c.activo?'':' inactive');badge.textContent=c.activo?'Activo':'Inactivo';estado.append(badge);tr.append(estado);
+    const td=document.createElement('td'),select=document.createElement('select');select.setAttribute('aria-label',`Empresa de ${c.codigo}`);
+    const agregar=(valor,texto)=>{const option=document.createElement('option');option.value=valor;option.textContent=texto;select.append(option);};
+    agregar('','Sin asignar');
+    eos.forEach(e=>agregar(e.codigoContexto,`${e.codigoEO} · ${e.nombre}`));
+    if(c.enteOperador&&!nombreEO(c.enteOperador))agregar(c.enteOperador,`${c.enteOperador} · no disponible`);
+    select.value=c.enteOperador||'';select.disabled=ocupado||!conectado;
+    select.addEventListener('change',()=>guardar(c,{enteOperador:select.value,eoCompartidas:(c.eoCompartidas||[]).filter(e=>e!==select.value)}));
+    td.append(select);tr.append(td);
+    const compartidas=document.createElement('td'),detalle=document.createElement('details'),resumen=document.createElement('summary');
+    const ids=c.eoCompartidas||[];
+    resumen.textContent=ids.length?`${ids.length} EO autorizadas`:'Seleccionar EO';
+    detalle.append(resumen);detalle.open=desplegados.has(c._id);
+    detalle.addEventListener('toggle',()=>{if(detalle.open)desplegados.add(c._id);else desplegados.delete(c._id);});
+    const aviso=document.createElement('p');aviso.className='ayuda';aviso.textContent='Pueden mostrar el canal; no editar su contenido.';detalle.append(aviso);
+    const buscador=document.createElement('input');buscador.type='search';buscador.placeholder='Buscar EO…';buscador.setAttribute('aria-label',`Buscar EO para ${c.codigo}`);buscador.value=filtrosEO.get(c._id)||'';detalle.append(buscador);
+    const opciones=document.createElement('div');opciones.className='opciones';detalle.append(opciones);
+    const candidatas=eos.filter(e=>e.codigoContexto!==c.enteOperador);
+    ids.filter(id=>!eos.some(e=>e.codigoContexto===id)).forEach(id=>candidatas.push({codigoContexto:id,nombre:id+' · no disponible',codigoEO:''}));
+    function dibujarOpciones(){
+      opciones.replaceChildren();const filtroEO=buscador.value.toLocaleLowerCase('es');
+      candidatas.filter(e=>`${e.codigoEO} ${e.nombre}`.toLocaleLowerCase('es').includes(filtroEO)).forEach(e=>{
+        const label=document.createElement('label'),check=document.createElement('input'),nombre=document.createElement('span');
+        check.type='checkbox';check.checked=ids.includes(e.codigoContexto);check.disabled=ocupado||!conectado;check.dataset.control='distribucion';
+        nombre.textContent=[e.codigoEO,e.nombre].filter(Boolean).join(' · ');
+        check.addEventListener('change',()=>guardar(c,{eoCompartidas:check.checked?[...ids,e.codigoContexto]:ids.filter(id=>id!==e.codigoContexto)}));
+        label.append(check,nombre);opciones.append(label);
+      });
+      if(!opciones.childNodes.length){const vacio=document.createElement('p');vacio.className='ayuda';vacio.textContent='No hay EO disponibles con este criterio.';opciones.append(vacio);}
+    }
+    buscador.addEventListener('input',()=>{filtrosEO.set(c._id,buscador.value);dibujarOpciones();});dibujarOpciones();
+    compartidas.append(detalle);tr.append(compartidas);
+    const hub=document.createElement('td'),labelHub=document.createElement('label'),checkHub=document.createElement('input'),textoHub=document.createElement('span');
+    labelHub.className='hub';checkHub.type='checkbox';checkHub.dataset.control='distribucion';checkHub.checked=c.publicarHub===true;checkHub.disabled=ocupado||!conectado;
+    checkHub.setAttribute('aria-label',`Publicar ${c.codigo} en TVD HUB`);textoHub.textContent='Autorizar';
+    checkHub.addEventListener('change',()=>guardar(c,{publicarHub:checkHub.checked}));labelHub.append(checkHub,textoHub);hub.append(labelHub);tr.append(hub);
+    const insignia=document.createElement('td'),labelInsignia=document.createElement('label'),checkInsignia=document.createElement('input'),textoInsignia=document.createElement('span');
+    labelInsignia.className='hub';checkInsignia.type='checkbox';checkInsignia.dataset.control='distribucion';checkInsignia.checked=c.esInsigniaEO===true;checkInsignia.disabled=ocupado||!conectado;
+    checkInsignia.setAttribute('aria-label',`Canal insignia ${c.codigo}`);textoInsignia.textContent='Insignia';
+    checkInsignia.addEventListener('change',()=>guardar(c,{esInsigniaEO:checkInsignia.checked}));labelInsignia.append(checkInsignia,textoInsignia);insignia.append(labelInsignia);tr.append(insignia);
+    $('filas').append(tr);
+  });
+  $('conteo').textContent=recibido?`${visibles.length} de ${canales.length} canales`:'Sin datos recibidos';
+  actualizarControles();
+}
+function guardar(c,cambios){
+  if(ocupado||!conectado)return;
+  ocupado=true;actualizarControles();
+  $('estado').className='';$('estado').textContent=`Guardando configuración de ${c.codigo}…`;
+  enviar('TVD_GC_GUARDAR_DISTRIBUCION',{canalId:c._id,enteOperador:c.enteOperador||'',eoCompartidas:c.eoCompartidas||[],publicarHub:c.publicarHub===true,esInsigniaEO:c.esInsigniaEO===true,...cambios});
+}
+function actualizarControles(){
+  $('recargar').disabled=ocupado||!conectado;
+  document.querySelectorAll('select,input[data-control]').forEach(s=>s.disabled=ocupado||!conectado);
+}
+window.addEventListener('message',event=>{
+  const m=event.data;
+  if(event.source!==parent||!m||m.tipo!=='TVD_GC_ESTADO'||m.version!==VERSION)return;
+  conectado=true;clearInterval(reintento);
+  ocupado=['CARGANDO','GUARDANDO'].includes(m.estado);
+  $('estado').className=m.estado==='ERROR'?'error':m.estado==='OK'?'ok':'';
+  $('estado').textContent=m.mensaje||'';
+  if(m.estado==='OK'||m.estado==='ERROR'){
+    if(Array.isArray(m.canales))canales=m.canales;
+    if(Array.isArray(m.eos))eos=m.eos;
+    if(m.estado==='OK')recibido=true;
+    render();
+  }else actualizarControles();
+});
+$('buscar').addEventListener('input',render);
+$('limpiar').addEventListener('click',()=>{$('buscar').value='';render();$('buscar').focus();});
+$('recargar').addEventListener('click',()=>{if(ocupado)return;ocupado=true;actualizarControles();$('estado').textContent='Consultando catálogo…';enviar('TVD_GC_CONSULTAR');});
+const reintento=setInterval(()=>{if(++intentos>=10){clearInterval(reintento);if(!conectado)$('estado').textContent='No se recibió conexión. Verifica el Velo de la página y vuelve a cargar.';return;}enviar('TVD_GC_LISTO');},1000);
+render();enviar('TVD_GC_LISTO');
+</script></body></html>
