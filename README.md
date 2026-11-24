@@ -1,4 +1,4 @@
-# TV Digital · App HUB / EO · v0.3.1
+# TV Digital · App HUB / EO · v0.3.2
 
 La app usa el modelo visual y las pantallas de CFCX: cabecera, tipografías, monitor, revista de Inicio, portadas/hemeroteca, Videoteca, Arcade, Mi app, temas y navegación inferior. `css/app.css` es una copia exacta del original. Las adaptaciones se concentran en identidad, fuentes públicas por contexto y el componente de dirección HUB/EO.
 
@@ -62,3 +62,5 @@ Pruebas incluidas: filtrado EO/HUB, exclusión de canales ajenos/inactivos y dat
 ## Procedencia
 
 Referencia visual: audj670702/cfcx, commit da339308e57bb957c5c26c224c83277b7762836f, versión v0.2.13. CFCX permanece intacta. Los backends de referencia fueron entregados por Jorge el 24 de noviembre de 2026. Sus funciones de transmisión/precarga/reporte VPS se conservaron.
+
+Versión 0.3.2: selector compacto alineado a la derecha, logotipo de la identidad pública en listado y tarjeta Mi app; código y nombre con estilos separados. Se reutiliza logoEO/logoEo de la cuenta para representar su canal insignia. Sin imagen se muestra un icono; no se inventan logotipos.

@@ -119,6 +119,8 @@
   function enlaceContexto(eo) {
     var u=new URL(location.pathname,location.origin);if(eo)u.searchParams.set('eo',eo);u.hash='/inicio';return u.href;
   }
+  function imagenCanal(logo,clase){return '<span class="'+clase+'">'+(/^https:\/\//i.test(logo||'')?'<img src="'+esc(logo)+'" alt="" loading="lazy" onerror="this.hidden=true">':I.play)+'</span>';}
+  function insigniaActual(){return DATA.canales.find(function(c){return c.esInsigniaEO===true;});}
   function direccionamiento() {
     if(contexto.modo!=='HUB')return '<section class="section context-direction"><a class="row" href="'+esc(enlaceContexto(''))+'"><span class="thumb">'+I.grid+'</span><span class="meta"><span class="title">TVD HUB</span></span><span class="chev">'+I.chev+'</span></a></section>';
     return '<section class="section context-direction"><button type="button" class="row context-toggle" id="abrirCanalesEO" aria-expanded="false" aria-controls="canalesEO"><span class="thumb">'+I.grid+'</span><span class="meta"><span class="title">Canales insignia</span></span><span class="chev">'+I.chev+'</span></button><div class="context-dropdown" id="canalesEO" hidden><div class="search-wrap"><input class="search" id="buscarCanalEO" type="search" placeholder="Buscar canal" aria-label="Buscar canal"><button type="button" class="icon-btn" id="limpiarCanalEO" aria-label="Limpiar búsqueda">✕</button></div><div class="list" id="listaCanalesEO"></div></div></section>';
@@ -133,7 +135,7 @@
     empresas.forEach(function(e){
       var enlace=document.createElement('a');enlace.className='row';enlace.href=enlaceContexto(e.codigoEO);
       enlace.setAttribute('aria-label',e.canalInsignia.codigo+' '+e.canalInsignia.nombre);
-      enlace.innerHTML='<span class="meta"><span class="title">'+esc(e.canalInsignia.codigo)+' '+esc(e.canalInsignia.nombre)+'</span></span><span class="chev">'+I.chev+'</span>';
+      enlace.innerHTML=imagenCanal(e.logo,'flagship-logo')+'<span class="channel-code">'+esc(e.canalInsignia.codigo)+'</span><span class="channel-name">'+esc(e.canalInsignia.nombre)+'</span><span class="chev">'+I.chev+'</span>';
       lista.append(enlace);
     });
     if(!empresas.length){var aviso=document.createElement('p');aviso.className='muted';aviso.textContent=errorCanales||!DATA.directorioDisponible?'Los canales no están disponibles en este momento.':filtro?'No hay canales con este criterio.':'Todavía no hay canales insignia disponibles.';lista.append(aviso);}
@@ -506,9 +508,9 @@
       (DATA.cupones.length?DATA.cupones.filter(vigente).map(function(c){return '<div class="coupon"><div class="value"><b>'+esc(c.descuento)+'</b><small>DESCUENTO</small></div><div class="body"><strong>'+esc(c.aliado)+'</strong><span class="muted">'+esc(c.detalle)+'</span></div></div>';}).join(''):'<p class="muted">No hay promociones disponibles.</p>')+'</div></section>';
   };
   V.mi = function () {
-    var tema=STORE.getTheme(),nombre=nombreApp();
+    var tema=STORE.getTheme(),nombre=nombreApp(),insignia=insigniaActual(),logo=DATA.identidad&&DATA.identidad.logo;
     view.innerHTML='<section class="section"><h1 class="h1">Mi app</h1></section>'+
-      '<section class="section"><div class="idcard"><div class="top"><div><small>'+(contexto.modo==='HUB'?'TVD HUB':'APP DE LA EMPRESA')+'</small><span class="brand">'+esc(nombre.toUpperCase())+'</span></div></div><div><div class="name">'+esc(nombre)+'</div><div class="foot"><span>Acceso público</span><span>TV Digital</span></div></div></div></section>'+
+      '<section class="section"><div class="idcard"><div class="top">'+imagenCanal(logo,'identity-channel-logo')+'<div class="identity-channel-text"><small>'+(contexto.modo==='HUB'?'TVD HUB':'TV DIGITAL')+'</small><span class="brand">'+esc(nombre.toUpperCase())+'</span></div></div><div><div class="name">'+(insignia?'<span class="channel-code">'+esc(insignia.codigo)+'</span> <span class="channel-name">'+esc(insignia.nombre)+'</span>':esc(nombre))+'</div><div class="foot"><span>Acceso público</span><span>TV Digital</span></div></div></div></section>'+
       '<section class="section"><a class="link-arrow" href="'+esc(enlaceContexto(contexto.eo))+'" id="compartirApp">Compartir esta app '+I.chev+'</a><a class="link-arrow" href="'+esc(CFG.portalUrl)+'" target="_blank" rel="noopener">Portal TV Digital '+I.chev+'</a></section>'+
       '<section class="section"><h2 class="eyebrow">Apariencia</h2><div class="segmented" id="tema">'+[['auto','Automático'],['light','Claro'],['dark','Oscuro']].map(function(t){return '<button type="button" data-theme="'+t[0]+'" aria-pressed="'+(t[0]===tema)+'">'+t[1]+'</button>';}).join('')+'</div><p class="note">Automático sigue la configuración de tu celular.</p></section>'+
       '<section class="section"><a class="link-arrow" href="#/cupones">Promociones y cupones '+I.chev+'</a><a class="link-arrow" href="#/espacios">Espacios '+I.chev+'</a><a class="link-arrow" href="#/buscar">Buscar '+I.chev+'</a></section>';
