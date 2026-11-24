@@ -1,0 +1,7 @@
+REVISTA · acceso de TVD al servicio editorial existente
+Archivo Wix: backend/cfcxRevistaPublica.js
+Busca el valor literal: https://cfcx.scad.mx
+En la cabecera Access-Control-Allow-Origin, sustituye únicamente ese valor por: *
+Conserva las comillas existentes. No cambies dominios en otros archivos ni otras cabeceras.
+Publica Wix.
+Esto permite consumir las fichas públicas ya aprobadas desde CFCX y TVD. No modifica el flujo editorial ni los permisos de administración.
