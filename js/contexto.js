@@ -4,9 +4,9 @@
   function resolver(search, cfg) {
     var params = new URLSearchParams(search);
     var eo = (params.get('eo') || params.get('codigoEO') || cfg.codigoEOPredeterminado || '').trim();
-    if (!eo) return { app: 'TVD', eo: '', clave: 'tvd.sin-eo.' };
+    if (!eo) return { app: 'TVD', modo:'HUB', eo: '', clave: 'tvd.TVD.HUB.' };
     if (!/^EO\d{3,}(?:-TVD-[A-Za-z0-9_-]+)?$/.test(eo)) throw new Error('EO_INVALIDA');
-    return { app: 'TVD', eo: eo, clave: 'tvd.TVD.' + eo + '.' };
+    return { app: 'TVD', modo:'EO', eo: eo, clave: 'tvd.TVD.' + eo + '.' };
   }
   function coincide(contexto, eo) {
     return contexto && contexto.app === 'TVD' && typeof contexto.codigoEO === 'string' &&

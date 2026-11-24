@@ -1,60 +1,60 @@
-# TV Digital · App EO
+# TV Digital · App HUB / EO · v0.2.0
 
-Base pública multiempresa, versión **v0.1.0**. Reutiliza el monitor HLS/YouTube y sus estilos de CFCX, sin alterar CFCX ni los VPS.
+La app usa el modelo visual y las pantallas de CFCX: cabecera, tipografías, monitor, revista de Inicio, portadas/hemeroteca, Videoteca, Arcade, Mi app, temas y navegación inferior. `css/app.css` es una copia exacta del original. Las adaptaciones se concentran en identidad, fuentes públicas por contexto y el componente de dirección HUB/EO.
 
-## Publicación
+## Entradas públicas
 
-Sitio estático sin compilación. En GitHub Pages seleccionar **main / raíz**. El dominio personalizado queda pendiente de confirmar; este repositorio no copia el CNAME de CFCX.
+| Entrada | Modo y comportamiento |
+|---|---|
+| https://tvd.scad.mx/ | HUB: canales autorizados para el HUB; acceso «Canales de las EO» con búsqueda y selección. |
+| https://tvd.scad.mx/?eo=EO013 | EO: identidad de la empresa, canales propios/compartidos y acceso «TVD HUB». |
 
-- URL base: muestra un formulario para abrir una EO.
-- `?eo=EO013#/inicio`: app de una EO.
-- `?eo=EO013-TVD-DEMO#/inicio`: admite también el contexto completo.
-- Enlaces inválidos no usan otra EO como respaldo.
+Los dos accesos de dirección usan el mismo lugar y diseño. Elegir un canal en el HUB sintoniza ese canal y conserva el modo HUB. El enlace difundido por una EO abre directamente su app, sin formularios de empresa, login ni validación del viewer.
 
-**No apuntar automáticamente `tvdigital.scad.mx` a GitHub Pages:** ese host ya sirve las señales HLS actuales. Confirmar un dominio de app diferente o una configuración explícita antes de cambiar su DNS.
+El portal comercial está separado en https://www.scad.mx/tvdigital y tiene su propio diseño y propósito. Los paneles administrativos mantienen su validación; no forman parte del acceso público de esta app.
 
-## Instalación de backend en Wix
+## Datos y límites reales
 
-Reemplazar completos, en este orden:
+- No se cargan catálogos, publicaciones ni datos de ejemplo de CFCX.
+- El servidor debe confirmar el contexto HUB o la EO solicitada. Un catálogo general sin contexto se rechaza.
+- Las pantallas de Revista, Videoteca, Espacios, Arcade y Cupones se conservan. Las que aún no tienen una fuente pública por contexto muestran estados vacíos reales. Los RIAs siguen pendientes, como en CFCX; no se simulan partidas, puntos o canjes.
+- Mi app conserva el diseño de tarjeta y las opciones de apariencia, con identidad pública del contexto. Se elimina el ingreso simulado de CFCX; no hay registros de espectadores.
+- El monitor conserva su lógica HLS/YouTube y de programación sincronizada. Solo se neutraliza un texto que mencionaba CFCX.
+- Preferencias y tema separados por APP/EO o HUB. No se almacenan catálogos/permisos para reproducción sin conexión.
+- Cada dos minutos y al reactivar la pestaña se consulta el catálogo. Ante un error o revocación se retiran los canales previos del monitor.
+- La PWA conserva el enlace del modo y la identidad al instalarse. Validar la instalación en Safari/Chrome antes de anunciarla.
 
-| Entrega | Destino en Wix |
+## Conexión Wix existente
+
+Estas entregas ya están incluidas y no se sustituyen por archivos de frontend:
+
+| Archivo | Destino |
 |---|---|
 | `wix/tvdNucleo_v2.2.0.txt` | `backend/tvdNucleo.js` |
 | `wix/tvdPublico_v2.3.0.txt` | `backend/tvdPublico.js` |
 
-Publicar ambos juntos. No cambiar `http-functions.js`: se conservan los nombres de los endpoints ya reexportados. No sustituir `tvdPanel.web.js` ni el Velo de la página con estos archivos.
+**Puente HTTP necesario:** la función existente en `backend/http-functions.js` debe reenviar `request`:
 
-Contrato reutilizado: `https://www.scad.mx/_functions/tvdCanales`.
+```js
+export function get_tvdCanales(request) {
+  return tvdPublico.get_tvdCanales(request);
+}
+```
 
-- Sin parámetros: conserva la consulta general que usa CFCX.
-- `?codigoEO=EO013&app=TVD`: valida EO activa y APP TVD; devuelve identidad pública y canales activos propios o compartidos.
-- `?hub=1`: devuelve solamente canales activos con `publicarHub === true`. Prepara la lectura del HUB; no construye su portal.
+El fragmento completo está en `wix/http-functions_TVD_ajuste.txt`. Sustituir únicamente esa función, no todo el archivo compartido con otras apps.
 
-La app comprueba la identidad devuelta por el servidor y rechaza un catálogo global o perteneciente a otra EO. Hasta instalar el backend muestra un estado pendiente real, sin usar los siete canales generales como respaldo.
+El endpoint existente acepta `?hub=1` o `?codigoEO=EO013&app=TVD`. La consulta sin parámetros conserva CFCX. No se crean servicios paralelos ni se intervienen los VPS.
 
-## Alcance v0.1.0
+La respuesta pública puede aportar `contenido:{articulos:[],programas:[],espacios:[],cupones:[]}` dentro del mismo contexto confirmado; la conexión editorial de estas fuentes sigue pendiente. Compartir un canal no implica compartir el resto del contenido de su propietaria.
 
-- Nombre y logotipo HTTPS de la EO desde SYS; logotipos almacenados como URI `wix:image` requieren normalización posterior.
-- Canales propios y compartidos; numeración independiente del tipo VPS/VIRTUAL.
-- Monitor de CFCX con su lógica de reproducción conservada: HLS, playlists YouTube y programación con reloj compartido.
-- Preferencias y tema separados por APP/EO.
-- Instalación PWA con identidad y enlace de la EO mediante manifest dinámico; comprobar la instalación en Safari y Chrome antes de anunciarla.
-- Sin registro de espectadores ni sesiones simuladas.
-- No guarda catálogos o permisos para reproducir sin conexión. Si falla una consulta, retira los canales del monitor; las autorizaciones se revisan al iniciar, cada dos minutos y al volver a la pestaña.
-- Una lista vacía del servidor retira los canales previos.
+## Publicación y pruebas
 
-Pendientes: adaptar Revista, Videoteca y demás módulos de CFCX a fuentes filtradas por EO; portal HUB; pagos/suscripciones; audiencia. No se incluyen datos de ejemplo, publicaciones CFCX ni módulos sin conexión real. La administración de canales permanece en los paneles ya existentes.
+GitHub Pages: main / raíz, dominio `tvd.scad.mx`, HTTPS. El archivo CNAME ya pertenece al repositorio. No modificar `tvdigital.scad.mx`, usado por las señales HLS.
 
-La distribución es pública: seleccionar una EO no acredita identidad administrativa. No se envían tokens Wix o VPS al navegador. Los canales compartidos se reproducen desde su fuente original; no se duplican playlists ni señales.
+Desarrollo: `npm ci`, `npm test`, `npm run serve`. No se requiere compilación para publicar.
 
-## Comprobación
-
-`npm test` ejecuta las pruebas de filtrado por EO/HUB, rechazo de contextos ajenos, privacidad, tipos de canal, programación y preferencias. `npm run serve` abre un servidor local en el puerto 8080. El navegador se prueba contra el backend publicado; las pruebas automáticas usan datos aislados, nunca canales de producción.
-
-La comprobación visual local quedó pendiente: el navegador del entorno no pudo iniciar por restricciones de ejecución. Las pruebas de JavaScript y backend sí se ejecutaron.
+Pruebas incluidas: filtrado EO/HUB, exclusión de canales ajenos/inactivos y datos privados, rechazo de contexto incorrecto, programación, preferencias separadas y DOM de los dos modos. Las pruebas DOM verifican cinco pestañas, cabecera, revista, monitor, selector/filtro, sintonización sin cambiar contexto, acceso EO→HUB, rutas, tema y estados de error. Datos aislados, sin escribir en CMS.
 
 ## Procedencia
 
-Base: `audj670702/cfcx`, commit `da339308e57bb957c5c26c224c83277b7762836f` (v0.2.13). `css/app.css` conserva los bytes originales. En `js/monitor.js` solamente se neutraliza el texto «Muy pronto en CFCX»; se conserva la lógica de reproducción. La adaptación inicial concentra el flujo público en reproducción e identidad EO; la interfaz editorial y demás módulos se adaptarán después a fuentes multiempresa.
-
-Backend: archivos vigentes proporcionados por Jorge el 24 de noviembre de 2026. `tvdNucleo` conserva las funciones de transmisión, precarga y reporte VPS; solamente se amplía la lectura pública y la resolución de EO. No se intervienen procesos ni cuentas VPS.
+Referencia visual: audj670702/cfcx, commit da339308e57bb957c5c26c224c83277b7762836f, versión v0.2.13. CFCX permanece intacta. Los backends de referencia fueron entregados por Jorge el 24 de noviembre de 2026. Sus funciones de transmisión/precarga/reporte VPS se conservaron.

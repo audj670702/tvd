@@ -1,0 +1,5 @@
+// backend/http-functions.js: sustituir únicamente la función existente get_tvdCanales.
+// No pegar este fragmento como reemplazo del archivo completo.
+export function get_tvdCanales(request) {
+  return tvdPublico.get_tvdCanales(request);
+}

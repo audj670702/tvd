@@ -1,9 +1,91 @@
 <!doctype html>
-<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>TV Digital</title><meta name="description" content="Canales de TV Digital de tu empresa operadora."><meta name="theme-color" content="#0E0F13"><link rel="manifest" href="./manifest.webmanifest"><link rel="icon" href="./assets/icon.svg"><link rel="apple-touch-icon" href="./assets/icon-180.png"><meta name="apple-mobile-web-app-capable" content="yes"><link rel="stylesheet" href="./css/app.css?v=0.1.0"><link rel="stylesheet" href="./css/eo.css?v=0.1.0"></head>
-<body><a class="skip" href="#view">Saltar al contenido</a>
-<header class="topbar"><div class="topbar-brand"><a href="#/inicio" class="wordmark" id="nombreApp">TV DIGITAL</a><span class="app-version">v0.1.0</span></div><div class="topbar-actions"><button type="button" class="pill" id="instalar" hidden>Instalar</button><button type="button" class="icon-btn" id="tema" aria-label="Cambiar tema">◐</button></div></header>
-<main id="view" tabindex="-1"><section class="section"><p role="status">Cargando…</p></section></main>
-<footer class="app-footer"><span id="identidadFooter">TV Digital · App EO</span><span>v0.1.0</span></footer>
-<nav class="tabbar" aria-label="Navegación principal"><a href="#/inicio" data-tab="inicio"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11 12 4l9 7v9H3z"/></svg>Inicio</a><a href="#/ajustes" data-tab="ajustes"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 6h14M5 12h14M5 18h14"/><circle cx="9" cy="6" r="2"/><circle cx="15" cy="12" r="2"/><circle cx="9" cy="18" r="2"/></svg>Mi app</a></nav>
-<dialog id="instalacion" aria-labelledby="tituloInstalacion"><h2 id="tituloInstalacion">Instalar app</h2><p id="guiaInstalacion"></p><p>En iPhone o iPad: abre este enlace en Safari, toca Compartir y elige Agregar a pantalla de inicio. En Android: usa Instalar app en el menú del navegador.</p><button type="button" class="btn" id="cerrarInstalacion">Cerrar</button></dialog>
-<script src="https://cdn.jsdelivr.net/npm/hls.js@1/dist/hls.min.js" defer></script><script src="./js/config.js?v=0.1.0" defer></script><script src="./js/contexto.js?v=0.1.0" defer></script><script src="./js/store.js?v=0.1.0" defer></script><script src="./js/canales.js?v=0.1.0" defer></script><script src="./js/monitor.js?v=0.1.0" defer></script><script src="./js/app.js?v=0.1.0" defer></script></body></html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>TV Digital</title>
+  <meta name="description" content="TV Digital: señal 24/7, canales temáticos, revista, Arcade y cupones.">
+  <meta name="theme-color" content="#0E0F13" media="(prefers-color-scheme: dark)">
+  <meta name="theme-color" content="#F6F4EF" media="(prefers-color-scheme: light)">
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="icon" href="./assets/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="./assets/icon-180.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="TVD">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@600;800&family=JetBrains+Mono:wght@500;700&family=Work+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="./css/app.css?v=0.2.0">
+  <link rel="stylesheet" href="./css/contexto.css?v=0.2.0">
+  <script>
+    // Aplica el tema guardado antes de pintar, para evitar parpadeo.
+    try {
+      var params = new URLSearchParams(location.search);
+      var eo = params.get('eo') || params.get('codigoEO') || 'HUB';
+      var t = localStorage.getItem('tvd.TVD.' + eo + '.tema');
+      if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t);
+    } catch (e) {}
+  </script>
+</head>
+<body>
+  <a class="skip" href="#view">Saltar al contenido</a>
+
+  <header class="topbar">
+    <div class="topbar-brand">
+      <a href="#/inicio" class="wordmark" aria-label="TV Digital, inicio">TV <span>DIGITAL</span></a>
+      <span class="app-version" id="appVersion" aria-label="Versión de la aplicación">v0.2.0</span>
+    </div>
+    <div class="topbar-actions">
+      <button type="button" class="pill install-app" id="installApp" aria-haspopup="dialog" aria-controls="installDialog" hidden>Instalar app</button>
+      <button type="button" class="icon-btn" id="themeToggle" aria-label="Cambiar tema"></button>
+      <a href="#/mi" class="pill" id="sessionLink">Mi app</a>
+    </div>
+  </header>
+
+  <main id="view" tabindex="-1"></main>
+
+  <footer class="app-footer" aria-label="Información de la aplicación">
+    <span id="contextFooter">TV DIGITAL</span>
+    <span class="app-footer-version" id="footerVersion" aria-label="Versión de la aplicación">v0.2.0</span>
+  </footer>
+
+  <nav class="tabbar" aria-label="Navegación principal">
+    <a href="#/inicio" data-tab="inicio">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11 12 4l9 7v9H3z"/></svg>Inicio
+    </a>
+    <a href="#/revista" data-tab="revista">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h12a2 2 0 0 1 2 2v14H6a2 2 0 0 1-2-2z"/><path d="M18 8h2v10a2 2 0 0 1-2 2M8 8h6M8 12h6M8 16h4"/></svg>Revista
+    </a>
+    <a href="#/videoteca" data-tab="videoteca">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m10 9 5 3-5 3z"/></svg>Videoteca
+    </a>
+    <a href="#/arcade" data-tab="arcade">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="7" width="20" height="11" rx="4"/><path d="M7 11v3M5.5 12.5h3"/></svg>Arcade
+    </a>
+    <a href="#/mi" data-tab="mi">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>Mi app
+    </a>
+  </nav>
+
+  <dialog class="install-dialog" id="canalesEO" aria-labelledby="canalesEOTitulo">
+    <div class="install-dialog-head"><h2 id="canalesEOTitulo">Canales de las EO</h2><button type="button" class="icon-btn" id="cerrarCanalesEO" aria-label="Cerrar selección">✕</button></div>
+    <div class="search-wrap"><input class="search" id="buscarCanalEO" type="search" placeholder="Buscar canal o empresa" aria-label="Buscar canal o empresa"><button class="icon-btn" id="limpiarCanalEO" aria-label="Limpiar búsqueda">✕</button></div><div class="list" id="listaCanalesEO"></div>
+  </dialog>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <dialog class="install-dialog" id="installDialog" aria-labelledby="installTitle">
+    <div class="install-dialog-head"><h2 id="installTitle">Instalar TVD</h2><button type="button" class="icon-btn" id="closeInstall" aria-label="Cerrar instalación" autofocus>✕</button></div>
+    <div id="installInstructions"></div>
+
+    </dialog>
+
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@1/dist/hls.min.js" defer></script>
+  <script src="./js/config.js?v=0.2.0" defer></script>
+  <script src="./js/contexto.js?v=0.2.0" defer></script>
+  <script src="./js/store.js?v=0.2.0" defer></script>
+  <script src="./js/canales.js?v=0.2.0" defer></script>
+  <script src="./js/monitor.js?v=0.2.0" defer></script>
+  <script src="./js/install.js?v=0.2.0" defer></script>
+  <script src="./js/app.js?v=0.2.0" defer></script>
+</body>
+</html>

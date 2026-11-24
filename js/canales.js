@@ -1,4 +1,4 @@
-/* TVD · adaptador público EO v0.1.0. Nunca acepta el catálogo global de CFCX. */
+/* TVD · adaptador público HUB/EO v0.2.0. Nunca acepta el catálogo global de CFCX. */
 (function () {
   'use strict';
   function programaDe(item, desfase) {
@@ -24,20 +24,24 @@
         tipo:tipo==='VPS'?'hls':'youtube',url:tipo==='VPS'&&/^https:\/\//i.test(url)?url:'',
         playlist:tipo==='VIRTUAL'&&/^[\w-]{8,}$/.test(playlist)?playlist:'',
         programa:tipo==='VIRTUAL'?programaDe(c,desfase):null,espacio:c.espacio||null,
+        eo:c.eo&&typeof c.eo.nombre==='string'?{nombre:c.eo.nombre,codigoEO:c.eo.codigoEO}:null,
         relacion:c.relacion==='COMPARTIDO'?'COMPARTIDO':'PROPIO',orden:Number(c.orden)||Number(codigo.slice(2)) };
     }).filter(Boolean).sort(function(a,b){return a.orden-b.orden || a.codigo.localeCompare(b.codigo);});
   }
   function validar(datos, eo) {
     if (!datos || datos.ok!==true || !Array.isArray(datos.canales)) throw new Error('RESPUESTA_INVALIDA');
-    if (!window.TVD_CONTEXTO.coincide(datos.contexto,eo)) throw new Error('CONTEXTO_NO_CONFIRMADO');
-    if (!datos.eo || typeof datos.eo.nombre!=='string' || !datos.eo.nombre.trim()) throw new Error('IDENTIDAD_NO_CONFIRMADA');
+    var hub=!eo;
+    if (hub ? !(datos.contexto && datos.contexto.app==='TVD' && datos.contexto.tipo==='HUB') : !window.TVD_CONTEXTO.coincide(datos.contexto,eo)) throw new Error('CONTEXTO_NO_CONFIRMADO');
+    if (!hub && (!datos.eo || typeof datos.eo.nombre!=='string' || !datos.eo.nombre.trim())) throw new Error('IDENTIDAD_NO_CONFIRMADA');
     var servidor=Date.parse(datos.ahora);
     return { canales:normalizar(datos.canales,Number.isFinite(servidor)?servidor-Date.now():0),
-      contexto:datos.contexto,eo:datos.eo,origen:'PANEL_TV' };
+      contexto:datos.contexto,eo:hub?{nombre:'TV Digital',logo:''}:datos.eo,contenido:datos.contenido || {},origen:'PANEL_TV' };
   }
   async function cargar(cfg, contexto) {
-    if (!contexto.eo) throw new Error('EO_REQUERIDA');
-    var url=new URL(cfg.canalesPublicosUrl);url.searchParams.set('codigoEO',contexto.eo);url.searchParams.set('app','TVD');
+    if (contexto.modo==='EO' && !contexto.eo) throw new Error('EO_REQUERIDA');
+    var url=new URL(cfg.canalesPublicosUrl);
+    if(contexto.modo==='HUB')url.searchParams.set('hub','1');
+    else {url.searchParams.set('codigoEO',contexto.eo);url.searchParams.set('app','TVD');}
     var controller=new AbortController(),timer=setTimeout(function(){controller.abort();},cfg.timeoutMs);
     try {
       var r=await fetch(url.href,{cache:'no-store',mode:'cors',credentials:'omit',signal:controller.signal});
