@@ -1,0 +1,77 @@
+// Wix: backend/tvdSuscripcion.web.js · v1.0.0
+import wixData from 'wix-data';
+import { currentMember } from 'wix-members-backend';
+import { webMethod, Permissions } from 'wix-web-module';
+import { orders } from '@wix/pricing-plans';
+import { auth } from '@wix/essentials';
+const PLAN='983d6ede-7678-4ac7-a367-1046de1308a6';
+const OPC={suppressAuth:true,consistentRead:true};
+const listar=auth.elevate(orders.managementListOrders);
+async function adminActual(){
+ const m=await currentMember.getMember();
+ if(!m?._id)throw new Error('NO_LOGIN');
+ const r=await wixData.query('QTD_Administradores').eq('memberId',m._id).eq('activo',true).limit(1).find(OPC);
+ if(!r.items.length)throw new Error('NO_AUTORIZADO');
+ return m._id;
+}
+async function todos(q){let r=await q.limit(100).find(OPC),items=[...r.items];while(r.hasNext()){r=await r.next();items.push(...r.items);}return items;}
+async function responsable(eo){
+ if(!eo.admPrincipal)throw new Error('SIN_RESPONSABLE');
+ const u=await wixData.get('SCaD_USR',eo.admPrincipal,OPC);
+ if(!u||!u.activo||u.app!=='TVD'||u.enteOperador!==eo.codigoContexto||!u.memberId)throw new Error('RESPONSABLE_NO_VINCULADO');
+ return u.memberId;
+}
+async function compras(memberId){
+ let offset=0,items=[];
+ for(;;){const r=await listar({buyerIds:[memberId],planIds:[PLAN],limit:50,offset});
+  if(!Array.isArray(r?.orders))throw new Error('PRICING_RESPUESTA_INVALIDA');
+  items.push(...r.orders.filter(o=>o.planId===PLAN&&o.buyer?.memberId===memberId));
+  if(!r.pagingMetadata?.hasNext)break;
+  if(!r.orders.length)throw new Error('PRICING_PAGINACION_INVALIDA');
+  offset+=50;
+ }
+ return items;
+}
+function evaluar(o,ahora=Date.now()){
+ if(!o)return {vigente:false,estado:'SIN_COMPRA'};
+ const estado=String(o.status||'').toUpperCase(),pago=String(o.lastPaymentStatus||'').toUpperCase();
+ const inicio=o.startDate?new Date(o.startDate).getTime():null,fin=o.endDate?new Date(o.endDate).getTime():null;
+ const fechasValidas=(inicio===null||Number.isFinite(inicio))&&(fin===null||Number.isFinite(fin));
+ const vigente=fechasValidas&&estado==='ACTIVE'&&pago==='PAID'&&(inicio===null||inicio<=ahora)&&(fin===null||fin>ahora);
+ return {vigente,estado:vigente?'VIGENTE':!fechasValidas?'FECHA_INVALIDA':estado==='ACTIVE'&&pago!=='PAID'?'PAGO_'+(pago||'SIN_CONFIRMAR'):estado==='ACTIVE'?'FUERA_DE_VIGENCIA':estado||'SIN_CONFIRMAR',pago,renovacionCancelada:o.autoRenewCanceled===true,fin:o.endDate||null,proximoCobro:o.autoRenewCanceled===true?null:o.currentCycle?.endedDate||null};
+}
+async function detalle(eo){
+ try{
+  const memberId=await responsable(eo),ordenes=await compras(memberId);
+  const vinculos=await todos(wixData.query('TVD_Suscripciones').eq('app','TVD').eq('enteOperador',eo.codigoContexto));
+  const ids=new Set(vinculos.map(v=>v._id));
+  const ligadas=ordenes.filter(o=>ids.has(o._id||o.id));
+  const vigente=ligadas.find(o=>evaluar(o).vigente),actual=vigente||ligadas[0];
+  const candidatas=[];
+  for(const o of ordenes.filter(o=>evaluar(o).vigente)){
+   const r=await wixData.query('TVD_Suscripciones').eq('_id',o._id||o.id).limit(1).find(OPC);
+   if(!r.items.length)candidatas.push({id:o._id||o.id,estado:'VIGENTE',fin:o.endDate||null});
+  }
+  return {codigoEO:eo.codigoEO,nombre:eo.nombreVisible||eo.nombre,codigoContexto:eo.codigoContexto,...evaluar(actual),estado:actual?evaluar(actual).estado:candidatas.length?'POR_VINCULAR':'SIN_COMPRA',comprasDisponibles:candidatas};
+ }catch(error){console.warn('TVD suscripción',eo.codigoEO,error.message);return {codigoEO:eo.codigoEO,nombre:eo.nombreVisible||eo.nombre,vigente:false,estado:'ERROR_VERIFICACION',comprasDisponibles:[]};}
+}
+export const tvdListarSuscripciones=webMethod(Permissions.SiteMember,async()=>{
+ await adminActual();
+ const eos=await todos(wixData.query('SCaD_EO').eq('app','TVD').eq('activo',true));
+ const resultados=[];for(const eo of eos)resultados.push(await detalle(eo));
+ return {planId:PLAN,planNombre:'TV Digital',suscripciones:resultados};
+});
+export const tvdVincularSuscripcion=webMethod(Permissions.SiteMember,async({codigoEO,orderId}={})=>{
+ const actor=await adminActual();
+ if(!/^EO\d{3,}$/.test(codigoEO||'')||typeof orderId!=='string'||!orderId)throw new Error('VINCULO_INVALIDO');
+ const r=await wixData.query('SCaD_EO').eq('app','TVD').eq('codigoEO',codigoEO).eq('activo',true).limit(2).find(OPC);
+ if(r.items.length!==1)throw new Error('EO_NO_DISPONIBLE');
+ const eo=r.items[0],memberId=await responsable(eo),ordenes=await compras(memberId);
+ const orden=ordenes.find(o=>(o._id||o.id)===orderId);
+ if(!orden||!evaluar(orden).vigente)throw new Error('COMPRA_NO_VIGENTE');
+ const existente=await wixData.query('TVD_Suscripciones').eq('_id',orderId).limit(1).find(OPC);
+ if(existente.items.length){if(existente.items[0].enteOperador!==eo.codigoContexto)throw new Error('COMPRA_YA_VINCULADA');return {ok:true};}
+ // El ID de orden es la clave única: una compra no puede asignarse a dos empresas.
+ await wixData.insert('TVD_Suscripciones',{_id:orderId,app:'TVD',enteOperador:eo.codigoContexto,codigoEO:eo.codigoEO,planId:PLAN,buyerMemberId:memberId,vinculadoPor:actor,fechaVinculo:new Date()},OPC);
+ return {ok:true};
+});
