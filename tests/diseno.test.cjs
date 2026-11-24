@@ -23,7 +23,7 @@ async function abrir(eo,fallo=false){
   }else{
    assert(d.querySelector('.wordmark').textContent.includes('EMPRESA DE PRUEBA'));
    assert(d.querySelector('[data-role=osd]').textContent.includes('07'));
-   assert.equal(new URL(d.querySelector('.context-direction a').href).search,'');
+   assert.equal(new URL(d.querySelector('.context-direction a').href).search,'');assert(d.querySelector('.context-direction a').classList.contains('context-toggle'));
   }
   for(const route of ['revista','videoteca','arcade','mi']){w.location.hash='/'+route;await new Promise(r=>setTimeout(r,20));assert(d.querySelector('#view .h1'));assert.equal(d.querySelector('#login'),null);}
   if(eo){assert.equal(d.querySelector('.identity-channel-logo img').src,'https://images.test/eo.png');assert.equal(d.querySelector('.idcard .channel-code').textContent,'CH07');}d.querySelector('[data-theme=light]').click();assert.equal(d.documentElement.getAttribute('data-theme'),'light');dom.window.close();
