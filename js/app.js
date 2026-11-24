@@ -558,9 +558,8 @@
   function aplicarDatos(nuevo) {
     DATA.canales=nuevo.canales;DATA.identidad=nuevo.eo;DATA.directorioEO=nuevo.directorioEO||[];DATA.directorioDisponible=nuevo.directorioDisponible===true;
     var contenido=nuevo.contenido || {};
-    ['espacios','programas','cupones','articulos'].forEach(function(k){DATA[k]=Array.isArray(contenido[k])?contenido[k]:[];});
-    DATA.articulos=DATA.articulos.slice().sort(function(a,b){return (Date.parse(b.fecha||b.fechaPublicacion)||0)-(Date.parse(a.fecha||a.fechaPublicacion)||0);});
-    DATA.revistaError=false;
+    ['espacios','programas','cupones'].forEach(function(k){DATA[k]=Array.isArray(contenido[k])?contenido[k]:[];});
+
   }
   async function consultarContexto() {
     if(consultaEnCurso)return;
@@ -570,18 +569,25 @@
       if(contextoError)throw new Error('EO_INVALIDA');
       nuevo=await window.TVD_CANALES.cargar(CFG,contexto);errorCanales='';aplicarDatos(nuevo);
     } catch(error) {
-      DATA={canales:[],espacios:[],programas:[],cupones:[],articulos:[]};
+      DATA.canales=[];DATA.espacios=[];DATA.programas=[];DATA.cupones=[];DATA.identidad=null;DATA.directorioEO=[];DATA.directorioDisponible=false;
       errorCanales=contextoError || 'No se pudieron cargar los canales. Vuelve a intentar en un momento.';
       console.warn('TVD · consulta pública',error.message);
     } finally {consultaEnCurso=false;}
     if(anterior!==JSON.stringify(DATA)){router();}else actualizarLeyendaCanales();
   }
+  var revistaEnCurso=false;
+  async function consultarRevista(){
+    if(revistaEnCurso)return;
+    revistaEnCurso=true;
+    try{var resultado=await window.TVD_REVISTA.cargar(CFG);var anterior=JSON.stringify([DATA.articulos,DATA.revistaError]);DATA.articulos=resultado.articulos;DATA.revistaError=resultado.error;if(anterior!==JSON.stringify([DATA.articulos,DATA.revistaError]))router();}
+    finally{revistaEnCurso=false;}
+  }
   pintarBotonTema();pintarSesion();
   window.addEventListener('hashchange',router);
-  router();consultarContexto();
-  setInterval(consultarContexto,CFG.intervaloMs);
-  window.addEventListener('online',consultarContexto);
-  document.addEventListener('visibilitychange',function(){if(!document.hidden)consultarContexto();});
+  router();consultarContexto();consultarRevista();
+  setInterval(function(){consultarContexto();consultarRevista();},CFG.intervaloMs);
+  window.addEventListener('online',function(){consultarContexto();consultarRevista();});
+  document.addEventListener('visibilitychange',function(){if(!document.hidden){consultarContexto();consultarRevista();}});
 
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', function () {

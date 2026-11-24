@@ -1,4 +1,4 @@
-# TV Digital · App HUB / EO · v0.3.3
+# TV Digital · App HUB / EO · v0.3.4
 
 La app usa el modelo visual y las pantallas de CFCX: cabecera, tipografías, monitor, revista de Inicio, portadas/hemeroteca, Videoteca, Arcade, Mi app, temas y navegación inferior. `css/app.css` es una copia exacta del original. Las adaptaciones se concentran en identidad, fuentes públicas por contexto y el componente de dirección HUB/EO.
 
@@ -15,9 +15,9 @@ El portal comercial está separado en https://www.scad.mx/tvdigital y tiene su p
 
 ## Datos y límites reales
 
-- No se cargan catálogos, publicaciones ni datos de ejemplo de CFCX.
+- No se cargan catálogos ni datos de ejemplo de CFCX. REVISTA comparte expresamente su fuente editorial pública y su respaldo aprobado.
 - El servidor debe confirmar el contexto HUB o la EO solicitada. Un catálogo general sin contexto se rechaza.
-- Las pantallas de Revista, Videoteca, Espacios, Arcade y Cupones se conservan. Las que aún no tienen una fuente pública por contexto muestran estados vacíos reales. Los RIAs siguen pendientes, como en CFCX; no se simulan partidas, puntos o canjes.
+- REVISTA está conectada al flujo público actual de CFCX, común a HUB y EO. Las pantallas de Videoteca, Espacios, Arcade y Cupones se conservan. Las que aún no tienen una fuente pública por contexto muestran estados vacíos reales. Los RIAs siguen pendientes, como en CFCX; no se simulan partidas, puntos o canjes.
 - Mi app conserva el diseño de tarjeta y las opciones de apariencia, con identidad pública del contexto. Se elimina el ingreso simulado de CFCX; no hay registros de espectadores.
 - El monitor conserva su lógica HLS/YouTube y de programación sincronizada. Solo se neutraliza un texto que mencionaba CFCX.
 - Preferencias y tema separados por APP/EO o HUB. No se almacenan catálogos/permisos para reproducción sin conexión.
@@ -63,4 +63,8 @@ Pruebas incluidas: filtrado EO/HUB, exclusión de canales ajenos/inactivos y dat
 
 Referencia visual: audj670702/cfcx, commit da339308e57bb957c5c26c224c83277b7762836f, versión v0.2.13. CFCX permanece intacta. Los backends de referencia fueron entregados por Jorge el 24 de noviembre de 2026. Sus funciones de transmisión/precarga/reporte VPS se conservaron.
 
-Versión 0.3.3: selector compacto alineado a la derecha, logotipo de la identidad pública en listado y tarjeta Mi app; código y nombre con estilos separados. Se reutiliza logoEO/logoEo de la cuenta para representar su canal insignia. Sin imagen se muestra un icono; no se inventan logotipos.
+Versión 0.3.4: selector compacto alineado a la derecha, logotipo de la identidad pública en listado y tarjeta Mi app; código y nombre con estilos separados. Se reutiliza logoEO/logoEo de la cuenta para representar su canal insignia. Sin imagen se muestra un icono; no se inventan logotipos.
+
+## REVISTA compartida · v0.3.4
+
+Usa `https://www.scad.mx/_functions/cfcxRevista` sin parámetros de empresa. Conserva Inicio, carruseles, portadas, hemeroteca con búsqueda, audio y lectura completa en el blog. El respaldo `data/revista-inicial.json` es la misma instantánea aprobada de CFCX y solo se usa si falla el servicio; una lista oficial vacía se respeta. Se actualiza cada dos minutos y al volver a la app. La consulta editorial es independiente del catálogo de canales y no se borra si este falla. No modifica el proceso de creación, aprobación o publicación ni añade modo multiempresa. No requiere cambios Wix.
