@@ -1,0 +1,604 @@
+/* ==========================================================
+   App CFCX · Monitor TV
+   - Modelo visual CPC v0.5.35: marco oscuro, identificación sobre imagen,
+     barra compacta y selector desplegable de canales.
+   - CH01 y CH02: señales HLS independientes.
+   - CH03+: listas de YouTube; CH00 opcional y propio de la EO.
+   - CH03+ con playlist del Panel TV (c.programa): un video a la vez con
+     reloj compartido; todos los monitores ven el mismo video al mismo tiempo.
+   Inicia silenciado (requisito de los navegadores para
+   reproducir automáticamente); el usuario activa el sonido.
+   ========================================================== */
+(function () {
+  var ICON = {
+    up: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m18 15-6-6-6 6"/></svg>',
+    muted: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 5 6 9H3v6h3l5 4z"/><path d="m22 9-6 6M16 9l6 6"/></svg>',
+    sound: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 5 6 9H3v6h3l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13"/></svg>',
+    full: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3"/></svg>',
+    channels: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="6" width="18" height="14" rx="2"/><path d="m8 2 4 4 4-4"/></svg>',
+    down: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>',
+    close: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>'
+  };
+
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  function indiceDeNumero(canales, numero) {
+    for (var i = 0; i < canales.length; i++) {
+      if (canales[i].numero === numero) return i;
+    }
+    return 0;
+  }
+
+  /*
+   * Canal inicial al abrir el monitor:
+   *  1) Canal elegido por el usuario (USR), si sigue activo en el catálogo.
+   *  2) SYS: CH00 si existe (configuración de la EO).
+   *  3) SYS: CH01 si no hay CH00.
+   *  4) Primer canal disponible.
+   */
+  function indicePredeterminado(canales) {
+    var store = window.CFCX_STORE;
+    var pref = store && store.getCanalPredeterminado ? store.getCanalPredeterminado() : null;
+    if (pref) {
+      for (var p = 0; p < canales.length; p++) {
+        if (canales[p].codigo === pref) return p;
+      }
+    }
+    for (var c = 0; c < canales.length; c++) {
+      if (canales[c].codigo === 'CH00') return c;
+    }
+    return indiceDeNumero(canales, '01');
+  }
+
+  /**
+   * @param {HTMLElement} root  contenedor donde se dibuja el monitor
+   * @param {object} opts
+   *   canales: catálogo público TV Digital normalizado
+   *   Cada canal VPS lleva su URL HLS propia (rutaHls en Panel TV).
+   *   inicial: número de canal inicial ("01")
+   *   mostrarCanales: muestra el selector de canales
+   */
+  function Monitor(root, opts) {
+    this.root = root;
+    this.canales = opts.canales || [];
+    this.mostrarCanales = opts.mostrarCanales !== false;
+    this.muted = true;
+    this.hls = null;
+    this.media = null;
+    this.fullscreenFallback = false;
+    this.idx = opts.inicial ? indiceDeNumero(this.canales, opts.inicial) : indicePredeterminado(this.canales);
+    this.render();
+    if (this.canales.length) this.sintonizar(this.idx, false);
+    else this.mensaje('Sin canales activos', 'El catálogo no tiene canales disponibles.');
+  }
+
+  Monitor.prototype.render = function () {
+    var self = this;
+    var menu = this.mostrarCanales
+      ? '<div class="tv-options" data-role="options" role="dialog" aria-label="Elegir canal" hidden>' +
+          '<div class="tv-options-head"><strong>Canales</strong>' +
+            '<button type="button" class="tv-options-close" data-act="close-menu" aria-label="Cerrar menú">' + ICON.close + '</button></div>' +
+          '<div class="tv-options-list" data-role="channel-list"></div>' +
+          '<p class="tv-options-foot" data-role="menu-foot"></p>' +
+        '</div>'
+      : '';
+    var selector = this.mostrarCanales
+      ? '<button type="button" class="tv-btn tv-channel-trigger" data-act="channels" aria-haspopup="dialog" aria-expanded="false" aria-label="Elegir canal">' +
+          ICON.channels + '<span>Canales</span>' + ICON.down + '</button>'
+      : '<span class="tv-channel-label">Monitor TV</span>';
+
+    this.root.innerHTML =
+      '<div class="tv" data-role="console">' +
+        '<div class="tv-screen" data-role="screen">' +
+          '<div class="tv-media" data-role="media"></div>' +
+          '<div class="tv-caption" aria-live="polite">' +
+            '<div class="tv-channel-heading"><strong data-role="osd">CH --</strong>' +
+              '<span class="tv-channel-name" data-role="now"></span></div>' +
+            '<span class="tv-live" data-role="live" hidden>EN VIVO</span>' +
+          '</div>' +
+          '<div class="tv-status" data-role="status" hidden><span data-role="status-text"></span>' +
+            '<span class="tv-status-line" aria-hidden="true"></span></div>' +
+          '<div class="tv-static" data-role="static" aria-hidden="true"></div>' +
+          '<button type="button" class="tv-fs-close" data-act="exit-full" aria-label="Salir de pantalla completa" hidden>' +
+            ICON.close + '</button>' +
+        '</div>' +
+        '<button type="button" class="tv-resume" data-act="resume" hidden>▶ Reproducir señal</button>' +
+        '<div class="tv-controls">' +
+          '<button type="button" class="tv-btn" data-act="sound" aria-label="Activar sonido">' + ICON.muted + '</button>' +
+          selector +
+          '<button type="button" class="tv-btn" data-act="full" aria-label="Pantalla completa">' + ICON.full + '</button>' +
+        '</div>' + menu +
+      '</div>';
+
+    this.el = {
+      console: this.root.querySelector('[data-role="console"]'),
+      screen: this.root.querySelector('[data-role="screen"]'),
+      media: this.root.querySelector('[data-role="media"]'),
+      live: this.root.querySelector('[data-role="live"]'),
+      osd: this.root.querySelector('[data-role="osd"]'),
+      stat: this.root.querySelector('[data-role="static"]'),
+      now: this.root.querySelector('[data-role="now"]'),
+      sound: this.root.querySelector('[data-act="sound"]'),
+      menu: this.root.querySelector('[data-role="options"]'),
+      menuTrigger: this.root.querySelector('[data-act="channels"]'),
+      channelList: this.root.querySelector('[data-role="channel-list"]'),
+      menuFoot: this.root.querySelector('[data-role="menu-foot"]'),
+      status: this.root.querySelector('[data-role="status"]'),
+      statusText: this.root.querySelector('[data-role="status-text"]'),
+      resume: this.root.querySelector('[data-act="resume"]'),
+      fullClose: this.root.querySelector('[data-act="exit-full"]')
+    };
+
+    this.onClick = function (event) {
+      var button = event.target.closest('button');
+      if (!button || !self.root.contains(button)) return;
+      var action = button.getAttribute('data-act');
+      if (action === 'sound') self.alternarSonido();
+      else if (action === 'channels') self.alternarMenu();
+      else if (action === 'close-menu') self.cerrarMenu();
+      else if (action === 'full') self.pantallaCompleta();
+      else if (action === 'exit-full') self.cerrarPantallaCompleta();
+      else if (action === 'resume') self.reanudar();
+      else if (button.hasAttribute('data-pin')) {
+        self.alternarPredeterminado(Number(button.getAttribute('data-pin')));
+      }
+      else if (button.hasAttribute('data-ch')) {
+        var index = Number(button.getAttribute('data-ch'));
+        self.cerrarMenu();
+        if (Number.isInteger(index) && index >= 0 && index < self.canales.length) {
+          self.sintonizar(index, true);
+        }
+      }
+    };
+    this.root.addEventListener('click', this.onClick);
+    this.onDocumentPointer = function (event) {
+      if (self.el.menu && !self.el.menu.hidden && !self.el.console.contains(event.target)) self.cerrarMenu();
+    };
+    this.onDocumentKey = function (event) {
+      if (event.key !== 'Escape') return;
+      if (self.fullscreenFallback) self.cerrarPantallaCompleta();
+      else self.cerrarMenu();
+    };
+    document.addEventListener('pointerdown', this.onDocumentPointer);
+    document.addEventListener('keydown', this.onDocumentKey);
+    this.pintarMenu();
+  };
+
+  Monitor.prototype.pintarMenu = function () {
+    if (!this.el.channelList) return;
+    var self = this;
+    var pref = this.preferido();
+    this.el.channelList.innerHTML = this.canales.map(function (c, i) {
+      var fijado = pref === c.codigo;
+      return '<div class="tv-channel-row">' +
+        '<button type="button" class="tv-channel-option' + (i === self.idx ? ' is-active' : '') +
+        '" data-ch="' + i + '" aria-pressed="' + (i === self.idx) + '">' +
+        '<span class="tv-option-code">CH ' + esc(c.numero) + '</span>' +
+        '<span class="tv-option-name">' + esc(c.nombre) + '</span>' +
+        '<span class="tv-option-check" aria-hidden="true">' + (i === self.idx ? '✓' : '') + '</span>' +
+        '</button>' +
+        '<button type="button" class="tv-pin' + (fijado ? ' is-pinned' : '') + '" data-pin="' + i +
+        '" aria-pressed="' + fijado + '" aria-label="' +
+        (fijado ? 'Quitar CH ' + esc(c.numero) + ' como predeterminado' : 'Fijar CH ' + esc(c.numero) + ' como predeterminado') +
+        '" title="' + (fijado ? 'Quitar predeterminado' : 'Fijar como predeterminado') + '">★</button>' +
+        '</div>';
+    }).join('') || '<p class="tv-options-empty">Sin canales disponibles</p>';
+    if (this.el.menuFoot) {
+      var fijo = this.canales.filter(function (c) { return c.codigo === pref; })[0];
+      this.el.menuFoot.textContent = fijo
+        ? 'Predeterminado: CH ' + fijo.numero + ' (elegido por ti)'
+        : 'Predeterminado: ' + (this.canales.some(function (c) { return c.codigo === 'CH00'; }) ? 'CH 00' : 'CH 01') + ' (sistema)';
+    }
+  };
+
+  Monitor.prototype.preferido = function () {
+    var store = window.CFCX_STORE;
+    return store && store.getCanalPredeterminado ? store.getCanalPredeterminado() : null;
+  };
+
+  Monitor.prototype.alternarPredeterminado = function (index) {
+    var store = window.CFCX_STORE;
+    var canal = this.canales[index];
+    if (!canal || !store || !store.setCanalPredeterminado) return;
+    if (this.preferido() === canal.codigo) store.quitarCanalPredeterminado();
+    else store.setCanalPredeterminado(canal.codigo);
+    this.pintarMenu();
+  };
+
+  Monitor.prototype.alternarMenu = function () {
+    if (!this.el.menu) return;
+    var abrir = this.el.menu.hidden;
+    this.el.menu.hidden = !abrir;
+    if (this.el.menuTrigger) this.el.menuTrigger.setAttribute('aria-expanded', String(abrir));
+    if (abrir) this.pintarMenu();
+  };
+
+  Monitor.prototype.cerrarMenu = function () {
+    if (this.el.menu) this.el.menu.hidden = true;
+    if (this.el.menuTrigger) this.el.menuTrigger.setAttribute('aria-expanded', 'false');
+  };
+
+  Monitor.prototype.estado = function (state, text) {
+    if (!this.el.status) return;
+    this.el.status.hidden = !text;
+    this.el.status.dataset.state = state || 'idle';
+    this.el.statusText.textContent = text || '';
+  };
+
+  Monitor.prototype.reanudar = function () {
+    if (this.el.resume) this.el.resume.hidden = true;
+    var v = this.media;
+    if (v && v.tagName === 'IFRAME') { this.pedirReproduccion(v); return; }
+    if (v && v.tagName === 'VIDEO') {
+      var result = v.play();
+      if (result && result.catch) {
+        var self = this;
+        result.catch(function () {
+          self.estado('action', 'Pulsa Reproducir para iniciar');
+          if (self.el.resume) self.el.resume.hidden = false;
+        });
+      }
+      return;
+    }
+    this.sintonizar(this.idx, false);
+  };
+
+  Monitor.prototype.activarPantallaCompletaInterna = function () {
+    this.fullscreenFallback = true;
+    document.body.classList.add('cfcx-tv-fs');
+    if (this.el.fullClose) this.el.fullClose.hidden = false;
+  };
+
+  Monitor.prototype.cerrarPantallaCompleta = function () {
+    if (this.fullscreenFallback) {
+      this.fullscreenFallback = false;
+      document.body.classList.remove('cfcx-tv-fs');
+      if (this.el.fullClose) this.el.fullClose.hidden = true;
+    } else if (document.fullscreenElement === this.el.screen && document.exitFullscreen) {
+      document.exitFullscreen();
+    }
+  };
+
+  Monitor.prototype.limpiarMedia = function () {
+    clearTimeout(this._programaT); this._programaT = null;
+    clearTimeout(this._vigilaT); clearTimeout(this._reintentoT);
+    if (this.hls) { try { this.hls.destroy(); } catch (e) {} this.hls = null; }
+    if (this.media && this.media.tagName === 'VIDEO') {
+      try { this.media.pause(); this.media.removeAttribute('src'); this.media.load(); } catch (e) {}
+    }
+    this.media = null;
+    this.el.media.innerHTML = '';
+  };
+
+  Monitor.prototype.mensaje = function (titulo, detalle) {
+    this.estado('error', titulo);
+    this.el.media.innerHTML = '<div class="tv-msg"><strong>' + esc(titulo) + '</strong><span>' + esc(detalle) + '</span></div>';
+  };
+
+  Monitor.prototype.sintonizar = function (i, conEfecto) {
+    var c = this.canales[i];
+    if (!c) return;
+    this.idx = i;
+    this.cerrarMenu();
+    this.limpiarMedia();
+    this.estado('', '');
+    if (this.el.resume) this.el.resume.hidden = true;
+
+    if (conEfecto) {
+      var st = this.el.stat;
+      st.classList.remove('on');
+      void st.offsetWidth;
+      st.classList.add('on');
+    }
+    this.el.osd.textContent = 'CH ' + c.numero;
+    this.el.live.hidden = c.tipo !== 'hls';
+    this.el.now.textContent = c.nombre;
+    this.pintarMenu();
+
+    if (c.tipo === 'hls') this.montarHls(c);
+    else if (c.tipo === 'youtube' && c.programa) this.montarPrograma(c);
+    else if (c.tipo === 'youtube') this.montarYoutube(c);
+    else this.mensaje('Canal en preparación', 'Contenido aún no disponible.');
+
+  };
+
+  Monitor.prototype.montarHls = function (canal) {
+    var self = this;
+    var url = canal.url;
+    this._reintento = false;
+    if (!url) { this.mensaje('Señal no configurada', 'Falta la URL HLS del canal en Panel TV.'); return; }
+    this.estado('loading', 'Cargando señal…');
+
+    var v = document.createElement('video');
+    v.setAttribute('playsinline', '');
+    v.setAttribute('webkit-playsinline', '');
+    v.autoplay = true;
+    v.muted = this.muted;
+    v.controls = false;
+    this.el.media.appendChild(v);
+    this.media = v;
+    v.addEventListener('playing', function () {
+      if (self.media === v) self.estado('', '');
+    });
+    v.addEventListener('waiting', function () {
+      if (self.media === v) self.estado('reconnecting', 'Recuperando señal…');
+    });
+    var reproducir = function () {
+      var p = v.play();
+      if (p && p.catch) p.catch(function (err) {
+        if (self.media !== v || !err || err.name === 'AbortError') return;
+        self.estado('action', 'Pulsa Reproducir para iniciar');
+        if (self.el.resume) self.el.resume.hidden = false;
+      });
+    };
+    var fallo = function () {
+      if (self.media !== v) return;
+      self.limpiarMedia();
+      self.estado('error', 'Señal no disponible');
+      self.mensaje('Señal no disponible por el momento', 'Intenta de nuevo en unos minutos');
+      if (self.el.resume) { self.el.resume.textContent = '↻ Reintentar señal'; self.el.resume.hidden = false; }
+    };
+
+    if (window.Hls && window.Hls.isSupported()) {
+      var hls = new window.Hls({ lowLatencyMode: false, backBufferLength: 30 });
+      this.hls = hls;
+      hls.loadSource(url);
+      hls.attachMedia(v);
+      hls.on(window.Hls.Events.MANIFEST_PARSED, function () { if (self.hls === hls) reproducir(); });
+      hls.on(window.Hls.Events.ERROR, function (_e, data) {
+        if (!data || !data.fatal || self.hls !== hls) return;
+        if (data.type === window.Hls.ErrorTypes.NETWORK_ERROR) {
+          // reintento único de red antes de mostrar el aviso
+          if (!self._reintento) { self._reintento = true; hls.startLoad(); return; }
+        } else if (data.type === window.Hls.ErrorTypes.MEDIA_ERROR) {
+          hls.recoverMediaError();
+          return;
+        }
+        fallo();
+      });
+    } else if (v.canPlayType('application/vnd.apple.mpegurl')) {
+      v.src = url;
+      v.addEventListener('error', fallo, { once: true });
+      reproducir();
+    } else {
+      fallo();
+    }
+  };
+
+  Monitor.prototype.montarYoutube = function (c) {
+    if (!c.playlist) { this.mensaje('Canal ' + c.nombre, 'Lista de reproducción por definir'); return; }
+    var src = 'https://www.youtube.com/embed/videoseries' +
+      '?list=' + encodeURIComponent(c.playlist) +
+      '&autoplay=1&mute=' + (this.muted ? '1' : '0') +
+      '&playsinline=1&rel=0&modestbranding=1&enablejsapi=1&loop=1';
+    this.estado('loading', 'Cargando contenido…');
+    var f = document.createElement('iframe');
+    f.src = src;
+    f.referrerPolicy = 'strict-origin-when-cross-origin';
+    var self = this;
+    this.vigilarReproduccion(f);
+    f.title = 'Canal ' + c.nombre;
+    f.allow = 'autoplay; encrypted-media; picture-in-picture; fullscreen';
+    f.setAttribute('allowfullscreen', '');
+    this.el.media.appendChild(f);
+    this.media = f;
+  };
+
+  // Playlist del Panel TV: posición = (hora del servidor - origen del ciclo) mod duración total.
+  Monitor.prototype.montarPrograma = function (c) {
+    var self = this;
+    var p = c.programa;
+    var total = p.videos.reduce(function (t, v) { return t + v.duracion; }, 0);
+    var pos = Math.floor((Date.now() + p.desfase - p.origen) / 1000) % total;
+    if (pos < 0) pos += total;
+    var i = 0;
+    while (pos >= p.videos[i].duracion) { pos -= p.videos[i].duracion; i += 1; }
+    var v = p.videos[i];
+    var restante = (v.duracion - pos) * 1000 + 500;
+    var siguiente = function () { self.avanzarPrograma(c); };
+    this.estado('loading', 'Cargando contenido…');
+    var f = document.createElement('iframe');
+    f.src = 'https://www.youtube.com/embed/' + encodeURIComponent(v.id) +
+      '?start=' + pos + '&autoplay=1&mute=' + (this.muted ? '1' : '0') +
+      '&playsinline=1&rel=0&modestbranding=1&controls=0&enablejsapi=1';
+    f.referrerPolicy = 'strict-origin-when-cross-origin';
+    f.title = 'Canal ' + c.nombre;
+    f.allow = 'autoplay; encrypted-media; picture-in-picture; fullscreen';
+    f.setAttribute('allowfullscreen', '');
+    this.vigilarReproduccion(f);
+    this.el.media.appendChild(f);
+    this.media = f;
+    this.el.now.textContent = c.nombre + (v.titulo ? ' · ' + v.titulo : '');
+    // Video no disponible: se espera su horario sin romper el reloj compartido.
+    if (!this._onYtMensaje) {
+      this._onYtMensaje = function (event) {
+        if (!/youtube(-nocookie)?\.com$/.test(String(event.origin || '').replace(/^https:\/\/(www\.)?/, ''))) return;
+        var m = self.media;
+        if (!m || m.tagName !== 'IFRAME' || event.source !== m.contentWindow) return;
+        var d = null;
+        try { d = typeof event.data === 'string' ? JSON.parse(event.data) : event.data; } catch (e) { return; }
+        if (d && d.event === 'onError') {
+          self.limpiarMedia();
+          self.mensaje('Programa no disponible', 'El siguiente programa inicia en breve');
+          var canal = self.canales[self.idx];
+          self._programaT = setTimeout(function () {
+            var vigente = self.canales[self.idx];
+            if (vigente && canal && vigente.codigo === canal.codigo) { self.limpiarMedia(); self.estado('', ''); self.montarPrograma(vigente); }
+          }, self._restante || 5000);
+        }
+      };
+      window.addEventListener('message', this._onYtMensaje);
+    }
+    this._restante = restante;
+    this._programaT = setTimeout(siguiente, restante);
+  };
+
+  // Cambio de video dentro de un programa: se carga el siguiente en el mismo
+  // iframe (sin recargarlo), así no hay corte visible ni se pierde el sonido.
+  Monitor.prototype.avanzarPrograma = function (c) {
+    var self = this;
+    var actual = this.canales[this.idx];
+    if (!actual || actual.codigo !== c.codigo) return;
+    var f = this.media;
+    if (!f || f.tagName !== 'IFRAME') { this.limpiarMedia(); this.montarPrograma(actual); return; }
+    var p = actual.programa;
+    var total = p.videos.reduce(function (t, v) { return t + v.duracion; }, 0);
+    var pos = Math.floor((Date.now() + p.desfase - p.origen) / 1000) % total;
+    if (pos < 0) pos += total;
+    var i = 0;
+    while (pos >= p.videos[i].duracion) { pos -= p.videos[i].duracion; i += 1; }
+    var v = p.videos[i];
+    var restante = (v.duracion - pos) * 1000 + 500;
+    this._restante = restante;
+    this._programaT = setTimeout(function () { self.avanzarPrograma(actual); }, restante);
+    this.el.now.textContent = actual.nombre + (v.titulo ? ' · ' + v.titulo : '');
+    try {
+      f.contentWindow.postMessage(JSON.stringify({ event: 'command', func: 'loadVideoById', args: [v.id, pos] }), '*');
+    } catch (e) {}
+  };
+
+  // Pide a YouTube reproducir en silencio y solicita informes de estado.
+  Monitor.prototype.pedirReproduccion = function (f) {
+    var cmd = function (func) {
+      try { f.contentWindow.postMessage(JSON.stringify({ event: 'command', func: func, args: [] }), '*'); } catch (e) {}
+    };
+    try { f.contentWindow.postMessage(JSON.stringify({ event: 'listening', id: 'cfcx' }), '*'); } catch (e) {}
+    // Respeta el sonido que eligió el usuario también tras un cambio de playlist.
+    this._pedidoT = Date.now();
+    cmd(this.muted ? 'mute' : 'unMute');
+    cmd('playVideo');
+  };
+
+  // El navegador bloqueó el sonido en el video nuevo: el monitor lo muestra como silenciado.
+  Monitor.prototype.reflejarSilencio = function () {
+    this.muted = true;
+    if (this.el.sound) {
+      this.el.sound.innerHTML = ICON.muted;
+      this.el.sound.classList.remove('on');
+      this.el.sound.setAttribute('aria-label', 'Activar sonido');
+    }
+    this.estado('action', 'Pulsa el botón de sonido para escuchar');
+  };
+
+  // Canales YouTube: arrancan solos en silencio. Si YouTube no confirma la
+  // reproducción, se ofrece el botón "Reproducir señal" (no se pide play en los canales virtuales por defecto).
+  Monitor.prototype.vigilarReproduccion = function (f) {
+    var self = this;
+    this._sonando = false;
+    clearTimeout(this._vigilaT); clearTimeout(this._reintentoT);
+    f.addEventListener('load', function () {
+      if (self.media !== f) return;
+      self.estado('', '');
+      self.pedirReproduccion(f);
+      self._reintentoT = setTimeout(function () { if (self.media === f && !self._sonando) self.pedirReproduccion(f); }, 1500);
+      self._vigilaT = setTimeout(function () {
+        if (self.media !== f || self._sonando) return;
+        if (self.el.resume) { self.el.resume.textContent = '▶ Reproducir señal'; self.el.resume.hidden = false; }
+      }, 6000);
+    });
+    if (!this._onYtEstado) {
+      this._onYtEstado = function (event) {
+        var m = self.media;
+        if (!m || m.tagName !== 'IFRAME' || event.source !== m.contentWindow) return;
+        var d = null;
+        try { d = typeof event.data === 'string' ? JSON.parse(event.data) : event.data; } catch (e) { return; }
+        if (d && d.event === 'infoDelivery' && d.info) {
+          if (d.info.playerState === 1) {
+            self._sonando = true;
+            if (self.el.resume) self.el.resume.hidden = true;
+          }
+          // Reproduce, pero el navegador lo tiene silenciado: se refleja en el botón.
+          // Se ignora el primer segundo tras pedir el sonido: YouTube tarda en aplicarlo.
+          if (d.info.muted === true && !self.muted && Date.now() - (self._pedidoT || 0) > 3000) self.reflejarSilencio();
+        }
+      };
+      window.addEventListener('message', this._onYtEstado);
+    }
+  };
+
+  Monitor.prototype.alternarSonido = function () {
+    this.muted = !this.muted;
+    var m = this.media;
+    if (m && m.tagName === 'VIDEO') {
+      m.muted = this.muted;
+      if (!this.muted) { var p = m.play(); if (p && p.catch) p.catch(function () {}); }
+    } else if (m && m.tagName === 'IFRAME') {
+      try {
+        m.contentWindow.postMessage(JSON.stringify({ event: 'command', func: this.muted ? 'mute' : 'unMute', args: [] }), '*');
+        if (!this.muted) m.contentWindow.postMessage(JSON.stringify({ event: 'command', func: 'playVideo', args: [] }), '*');
+      } catch (e) {}
+    }
+    this.el.sound.innerHTML = this.muted ? ICON.muted : ICON.sound;
+    this.el.sound.classList.toggle('on', !this.muted);
+    this.el.sound.setAttribute('aria-label', this.muted ? 'Activar sonido' : 'Silenciar');
+  };
+
+  Monitor.prototype.pantallaCompleta = function () {
+    var screen = this.el.screen;
+    if (this.fullscreenFallback) { this.cerrarPantallaCompleta(); return; }
+    if (document.fullscreenElement === screen && document.exitFullscreen) {
+      document.exitFullscreen();
+      return;
+    }
+    var self = this;
+    if (screen.requestFullscreen) {
+      try {
+        var result = screen.requestFullscreen();
+        if (result && result.catch) result.catch(function () { self.activarPantallaCompletaInterna(); });
+      } catch (_) { this.activarPantallaCompletaInterna(); }
+    } else if (screen.webkitRequestFullscreen) {
+      try { screen.webkitRequestFullscreen(); } catch (_) { this.activarPantallaCompletaInterna(); }
+    } else {
+      // iPhone: alternativa dentro de la app, como CPC.
+      this.activarPantallaCompletaInterna();
+    }
+  };
+
+  // Firma de lo que se reproduce; el desfase del reloj no cuenta como cambio.
+  function firmaCanal(c) {
+    var p = c.programa;
+    return [c.codigo, c.numero, c.nombre, c.tipo, c.url, c.playlist,
+      p ? p.origen + '|' + p.videos.map(function (v) { return v.id + ':' + v.duracion; }).join(',') : ''].join('#');
+  }
+
+  Monitor.prototype.actualizarCanales = function (canales) {
+    var actual = this.canales[this.idx];
+    var nuevos = Array.isArray(canales) ? canales : [];
+    var nuevoIdx = actual ? nuevos.findIndex(function (c) { return c.codigo === actual.codigo; }) : -1;
+    // Sin cambios en el canal en pantalla: no se reinicia el video ni el sonido.
+    if (nuevoIdx >= 0 && firmaCanal(actual) === firmaCanal(nuevos[nuevoIdx])) {
+      this.canales = nuevos;
+      this.idx = nuevoIdx;
+      this.pintarMenu();
+      return;
+    }
+    var codigoActual = actual && actual.codigo;
+    this.limpiarMedia();
+    this.cerrarPantallaCompleta();
+    this.root.removeEventListener('click', this.onClick);
+    document.removeEventListener('pointerdown', this.onDocumentPointer);
+    document.removeEventListener('keydown', this.onDocumentKey);
+    this.canales = Array.isArray(canales) ? canales : [];
+    var indice = this.canales.findIndex(function (c) { return c.codigo === codigoActual; });
+    this.idx = indice >= 0 ? indice : 0;
+    this.render();
+    if (this.canales.length) this.sintonizar(this.idx, false);
+    else this.mensaje('Sin canales activos', 'El catálogo no tiene canales disponibles.');
+  };
+
+  Monitor.prototype.destroy = function () {
+    if (this._onYtMensaje) { window.removeEventListener('message', this._onYtMensaje); this._onYtMensaje = null; }
+    if (this._onYtEstado) { window.removeEventListener('message', this._onYtEstado); this._onYtEstado = null; }
+    this.cerrarPantallaCompleta();
+    this.limpiarMedia();
+    this.root.removeEventListener('click', this.onClick);
+    document.removeEventListener('pointerdown', this.onDocumentPointer);
+    document.removeEventListener('keydown', this.onDocumentKey);
+  };
+
+  window.CFCXMonitor = Monitor;
+})();

@@ -1,0 +1,72 @@
+// TV DIGITAL · backend/tvdPublico.js · v2.3.0
+// EO: ?codigoEO=EO013&app=TVD. HUB: ?hub=1. Sin parámetros conserva CFCX.
+import { ok, serverError } from 'wix-http-functions';
+import { construirTransmision, construirPrecarga, listarCanalesPublicos, normalizarCodigo, registrarAlAireVps, resolverEOAppPublica } from 'backend/tvdNucleo';
+import { salidasParaVps, registrarEstadoVps } from 'backend/tvdSalidas';
+const TVD_HEADERS = {
+  'Content-Type':'application/json; charset=utf-8',
+  'Access-Control-Allow-Origin':'*',
+  'Access-Control-Allow-Methods':'GET, OPTIONS',
+  'Access-Control-Allow-Headers':'Content-Type',
+  'Cache-Control':'no-store'
+};
+function canalDeSolicitud(request) { const consulta=request?.query || {};return normalizarCodigo(consulta.canal || 'CH01'); }
+export function options_tvdTransmision() { return ok({headers:TVD_HEADERS,body:{ok:true}}); }
+export async function get_tvdTransmision(request) {
+  try { const cuerpo=await construirTransmision(canalDeSolicitud(request));return ok({headers:TVD_HEADERS,body:cuerpo}); }
+  catch(error) {
+    console.error('TVD / tvdTransmision error:',error);
+    return serverError({headers:TVD_HEADERS,body:{ok:false,codigo:'ERROR_TVD_TRANSMISION',mensaje:error?.message || 'No fue posible obtener la transmisión.',transmision:null,playlist:null,elementos:[]}});
+  }
+}
+export function options_tvdCanales() { return ok({headers:TVD_HEADERS,body:{ok:true}}); }
+export async function get_tvdCanales(request) {
+  try {
+    const query=request?.query || {};
+    const codigo=typeof query.codigoEO === 'string' ? query.codigoEO.trim() : '';
+    const hub=query.hub === '1';
+    if (query.hub !== undefined && !hub) throw new Error('CONTEXTO_INVALIDO');
+    if (query.app !== undefined && query.app !== 'TVD') throw new Error('APP_INVALIDA');
+    if (hub && (query.codigoEO !== undefined || query.app !== undefined)) throw new Error('CONTEXTO_AMBIGUO');
+    if (query.codigoEO !== undefined || query.app !== undefined) {
+      if (!codigo) throw new Error('EO_REQUERIDA');
+      const identidad=await resolverEOAppPublica(codigo);
+      const canales=await listarCanalesPublicos({codigoContexto:identidad.contexto.codigoContexto});
+      return ok({headers:TVD_HEADERS,body:{ok:true,ahora:new Date(),...identidad,canales}});
+    }
+    const canales=await listarCanalesPublicos(hub ? {hub:true} : {});
+    return ok({headers:TVD_HEADERS,body:{ok:true,ahora:new Date(),...(hub ? {contexto:{app:'TVD',tipo:'HUB'}} : {}),canales}});
+  } catch(error) {
+    console.error('TVD / tvdCanales error:',error);
+    return serverError({headers:TVD_HEADERS,body:{ok:false,codigo:'ERROR_TVD_CANALES',canales:[]}});
+  }
+}
+export function options_tvdPrecarga() { return ok({headers:TVD_HEADERS,body:{ok:true}}); }
+export async function get_tvdPrecarga(request) {
+  try { const cuerpo=await construirPrecarga(canalDeSolicitud(request));return ok({headers:TVD_HEADERS,body:cuerpo}); }
+  catch(error) { console.error('TVD / tvdPrecarga error:',error);return serverError({headers:TVD_HEADERS,body:{ok:false,codigo:'ERROR_TVD_PRECARGA',videos:[]}}); }
+}
+const TVD_HEADERS_POST={...TVD_HEADERS,'Access-Control-Allow-Methods':'POST, OPTIONS','Access-Control-Allow-Headers':'Content-Type, X-TVD-Token'};
+export function options_tvdAlAire() { return ok({headers:TVD_HEADERS_POST,body:{ok:true}}); }
+export async function post_tvdAlAire(request) {
+  try {
+    const cabeceras=request?.headers || {};
+    const token=cabeceras['x-tvd-token'] || cabeceras['X-TVD-Token'] || '';
+    let datos={};try { datos=await request.body.json(); } catch(_) { datos={}; }
+    const r=await registrarAlAireVps(canalDeSolicitud(request),token,datos);
+    return ok({headers:TVD_HEADERS_POST,body:r});
+  } catch(error) { console.error('TVD / tvdAlAire error:',error);return serverError({headers:TVD_HEADERS_POST,body:{ok:false,codigo:'ERROR_TVD_ALAIRE'}}); }
+}
+function tokenDe(request) { const c=request?.headers || {};return c['x-tvd-token'] || c['X-TVD-Token'] || ''; }
+export function options_tvdSalidas() { return ok({headers:TVD_HEADERS_POST,body:{ok:true}}); }
+export async function get_tvdSalidas(request) {
+  try { return ok({headers:TVD_HEADERS_POST,body:await salidasParaVps(tokenDe(request))}); }
+  catch(error) { console.error('TVD / tvdSalidas error:',error);return serverError({headers:TVD_HEADERS_POST,body:{ok:false,codigo:'ERROR_TVD_SALIDAS',salidas:[]}}); }
+}
+export function options_tvdSalidaEstado() { return ok({headers:TVD_HEADERS_POST,body:{ok:true}}); }
+export async function post_tvdSalidaEstado(request) {
+  try {
+    let datos={};try { datos=await request.body.json(); } catch(_) { datos={}; }
+    return ok({headers:TVD_HEADERS_POST,body:await registrarEstadoVps(tokenDe(request),datos)});
+  } catch(error) { console.error('TVD / tvdSalidaEstado error:',error);return serverError({headers:TVD_HEADERS_POST,body:{ok:false,codigo:'ERROR_TVD_SALIDA_ESTADO'}}); }
+}

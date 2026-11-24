@@ -1,0 +1,415 @@
+// TV DIGITAL · backend/tvdNucleo.js · v2.2.0
+// Lectura pública por EO/HUB. Funciones VPS conservadas.
+import wixData from 'wix-data';
+export const COL = {
+  CANALES: 'TVD_Canales',
+  PARRILLA: 'TVD_Parrilla',
+  ESTADO: 'TVD_EstadoCanal',
+  SALIDAS: 'TVD_Salidas',
+  BITACORA: 'TVD_Bitacora',
+  PLAYLISTS: 'QTD_Playlist',
+  ELEMENTOS: 'QTD_PlaylistElementos',
+  CATALOGO: 'QRO_Catalogo'
+};
+export const OPC = { suppressAuth: true, consistentRead: true };
+export const TIPOS_FILA = ['PLAYLIST', 'URL'];
+export const ORIGEN_CICLO = new Date('2026-10-13T06:00:00Z');
+const VIGENCIA_REPORTE_MS = 6 * 3600 * 1000;
+export function texto(valor, maximo = 500) {
+return String(valor ?? '').trim().slice(0, maximo);
+}
+export function normalizarCodigo(valor) {
+return texto(valor, 20).toUpperCase().replace(/\s+/g, '');
+}
+export function fechaValida(valor) {
+if (!valor) return null;
+const f = valor instanceof Date ? valor : new Date(valor);
+return Number.isNaN(f.getTime()) ? null : f;
+}
+export function inferirTipoFuente(url = '') {
+const v = String(url || '').toLowerCase();
+if (v.includes('youtube.com') || v.includes('youtu.be')) return 'YOUTUBE';
+if (v.includes('vimeo.com')) return 'VIMEO';
+if (v.includes('.m3u8')) return 'HLS';
+if (v.includes('.mp4')) return 'MP4';
+return 'OTRO';
+}
+export function idYoutube(url = '') {
+const m = String(url || '').match(/(?:youtube\.com\/(?:watch\\?(?:.*&)?v=|embed\/|shorts\/|live\/|v\/)|youtu\.be\/)([A-Za-z0-9_-]{11})/);
+return m ? m[1] : '';
+}
+export function segundos(valor) {
+if (typeof valor === 'number') return Math.max(0, Math.floor(valor));
+const partes = String(valor || '').trim().split(':').map(Number);
+if (!partes.length || partes.some((n) => Number.isNaN(n))) return 0;
+if (partes.length === 3) return partes[0] * 3600 + partes[1] * 60 + partes[2];
+if (partes.length === 2) return partes[0] * 60 + partes[1];
+return Math.max(0, partes[0] || 0);
+}
+export async function obtenerCanal(codigo) {
+const cod = normalizarCodigo(codigo);
+if (!cod) return null;
+const r = await wixData.query(COL.CANALES).eq('codigo', cod).limit(1).find(OPC);
+return r.items[0] || null;
+}
+export async function obtenerEstadoCanal(codigo) {
+const r = await wixData.query(COL.ESTADO).eq('canalId', normalizarCodigo(codigo)).limit(1).find(OPC);
+return r.items[0] || null;
+}
+/** Resuelve una referencia de playlist (_id o registroPlaylist) a su _id real. */
+export async function resolverPlaylistId(referencia) {
+const valor = texto(referencia, 120);
+if (!valor) return '';
+try {
+const directa = await wixData.get(COL.PLAYLISTS, valor, OPC);
+if (directa?._id) return directa._id;
+  } catch (_) {
+    // puede ser registroPlaylist
+  }
+const r = await wixData.query(COL.PLAYLISTS).eq('registroPlaylist', valor).limit(1).find(OPC);
+return r.items[0]?._id || '';
+}
+export async function duracionPlaylistActiva(referencia) {
+const playlistId = await resolverPlaylistId(referencia);
+if (!playlistId) return 0;
+const r = await wixData.query(COL.ELEMENTOS).eq('playlistId', playlistId).eq('activo', true).limit(1000).find(OPC);
+return r.items.reduce((t, e) => t + Math.max(0, Number(e.duracionSegundos) || 0), 0);
+}
+// ---------------------------------------------------------------- filas
+/**
+ * Filas de la parrilla de un canal, en orden, con sus videos y duración.
+ * Cada fila: { ...registro, tipo, activa, reproducible, playlistNombre, videos[], duracion }
+ */
+export async function obtenerFilas(codigo) {
+const cod = normalizarCodigo(codigo);
+const r = await wixData.query(COL.PARRILLA).eq('canalId', cod)
+    .ascending('orden').ascending('_createdDate').limit(1000).find(OPC);
+const filas = r.items.map((e) => ({ ...e, tipo: texto(e.tipoContenido, 40).toUpperCase() }));
+  // Playlists usadas (una sola consulta de elementos)
+const referencias = [...new Set(filas.filter((f) => f.tipo === 'PLAYLIST').map((f) => texto(f.contenidoId, 120)).filter(Boolean))];
+const resueltas = new Map();
+for (const ref of referencias) resueltas.set(ref, await resolverPlaylistId(ref));
+const ids = [...new Set([...resueltas.values()].filter(Boolean))];
+const [listas, elementos] = ids.length
+    ? await Promise.all([
+      wixData.query(COL.PLAYLISTS).hasSome('_id', ids).limit(1000).find(OPC),
+      wixData.query(COL.ELEMENTOS).hasSome('playlistId', ids).eq('activo', true).ascending('orden').limit(1000).find(OPC)
+    ])
+    : [{ items: [] }, { items: [] }];
+const nombres = new Map(listas.items.map((p) => [p._id, p.nombre || '']));
+return filas.map((f, i) => {
+let videos = [];
+let playlistNombre = '';
+if (f.tipo === 'PLAYLIST') {
+const pid = resueltas.get(texto(f.contenidoId, 120)) || '';
+      playlistNombre = nombres.get(pid) || '';
+      videos = elementos.items
+        .filter((e) => e.playlistId === pid)
+        .sort((a, b) => (Number(a.orden) || 0) - (Number(b.orden) || 0))
+        .map((e) => ({
+          titulo: e.titulo || '',
+          url: e.referenciaVideo || '',
+          duracion: Math.max(0, Number(e.duracionSegundos) || 0)
+        }));
+    } else if (f.tipo === 'URL') {
+      videos = [{ titulo: f.titulo || '', url: f.url || '', duracion: Math.max(0, Number(f.duracionSegundos) || 0) }];
+    }
+const duracion = videos.reduce((t, v) => t + v.duracion, 0);
+const reproducible = TIPOS_FILA.includes(f.tipo) && duracion > 0 && videos.some((v) => v.duracion > 0);
+return {
+      ...f,
+      posicion: i + 1,
+      activa: f.publicado !== false,
+      reproducible,
+      playlistNombre,
+      videos,
+      duracion
+    };
+  });
+}
+// ---------------------------------------------------------------- línea de tiempo
+function avanzar(secuencia, pos0, t0, momento) {
+const total = secuencia.reduce((t, v) => t + v.duracion, 0) * 1000;
+let i = pos0;
+let t = t0.getTime();
+const objetivo = momento.getTime();
+if (objetivo > t && total > 0) {
+const vueltas = Math.floor((objetivo - t) / total);
+    t += vueltas * total;
+  }
+let guardia = 0;
+while (t + secuencia[i].duracion * 1000 <= objetivo && guardia < 100000) {
+    t += secuencia[i].duracion * 1000;
+    i = (i + 1) % secuencia.length;
+    guardia += 1;
+  }
+return { indice: i, inicio: new Date(t) };
+}
+/**
+ * Calcula todo lo que el panel y el VPS necesitan saber de un canal en un momento:
+ * filas con inicio/fin previstos, lo que está al aire, lo siguiente y la secuencia
+ * de videos (rotada desde la fila de "Transmitir ahora", para el VPS).
+ */
+export async function calcularLineaDeTiempo(codigo, ahora) {
+const momento = ahora instanceof Date ? ahora : new Date();
+const cod = normalizarCodigo(codigo);
+const [canal, estado, filas] = await Promise.all([obtenerCanal(cod), obtenerEstadoCanal(cod), obtenerFilas(cod)]);
+const base = { canal, estado, filas, secuencia: [], rotada: [], alAire: null, siguiente: null, ahora: momento };
+if (!canal) return base;
+const enCiclo = filas.filter((f) => f.activa && f.reproducible);
+const secuencia = [];
+  enCiclo.forEach((f, idxFila) => {
+    f.videos.forEach((v, idxVideo) => {
+if (v.duracion > 0) secuencia.push({ ...v, filaId: f._id, idxFila, idxVideo, videosFila: f.videos.length });
+    });
+  });
+if (!secuencia.length) return base;
+  // Ancla de "Transmitir ahora"
+const anclaDesde = fechaValida(estado?.anclaDesde);
+const posAncla = anclaDesde ? secuencia.findIndex((v) => v.filaId === estado?.anclaEntradaId) : -1;
+let pos0 = posAncla >= 0 ? posAncla : 0;
+let t0 = posAncla >= 0 ? anclaDesde : ORIGEN_CICLO;
+let real = false;
+  // Corrección con lo que el VPS reporta al aire
+const aireInicio = fechaValida(estado?.aireInicio);
+const vigente = aireInicio && (momento - aireInicio) < VIGENCIA_REPORTE_MS &&
+    (!anclaDesde || aireInicio.getTime() >= anclaDesde.getTime() - 5000);
+if (texto(canal.tipo, 20).toUpperCase() === 'VPS' && vigente && estado?.aireVideoId && estado?.aireRelleno !== true) {
+const previsto = avanzar(secuencia, pos0, t0, aireInicio).indice;
+const candidatos = secuencia.map((v, i) => (idYoutube(v.url) === estado.aireVideoId ? i : -1)).filter((i) => i >= 0);
+if (candidatos.length) {
+const n = secuencia.length;
+const distancia = (i) => Math.min((i - previsto + n) % n, (previsto - i + n) % n);
+      pos0 = candidatos.sort((a, b) => distancia(a) - distancia(b))[0];
+      t0 = aireInicio;
+      real = true;
+    }
+  }
+const { indice, inicio } = avanzar(secuencia, pos0, t0, momento);
+const actual = secuencia[indice];
+const filaActual = enCiclo[actual.idxFila];
+  // Inicio de la fila al aire = inicio del video actual menos los videos previos de esa fila
+let inicioFila = inicio.getTime();
+for (let k = indice - 1, pasos = 0; pasos < secuencia.length; k -= 1, pasos += 1) {
+const previo = secuencia[(k + secuencia.length) % secuencia.length];
+if (previo.filaId !== actual.filaId || previo.idxVideo >= actual.idxVideo) break;
+    inicioFila -= previo.duracion * 1000;
+  }
+  // Horarios previstos: un ciclo completo desde la fila al aire
+const horarios = new Map();
+let t = inicioFila;
+for (let j = 0; j < enCiclo.length; j += 1) {
+const f = enCiclo[(actual.idxFila + j) % enCiclo.length];
+    horarios.set(f._id, { inicio: new Date(t), fin: new Date(t + f.duracion * 1000) });
+    t += f.duracion * 1000;
+  }
+const idSiguienteFila = enCiclo[(actual.idxFila + 1) % enCiclo.length]._id;
+  filas.forEach((f) => {
+const h = horarios.get(f._id);
+    f.inicio = h ? h.inicio : null;
+    f.fin = h ? h.fin : null;
+    f.estado = f._id === filaActual._id ? 'AL_AIRE' : (f._id === idSiguienteFila && enCiclo.length > 1 ? 'SIGUIENTE' : '');
+  });
+const sig = secuencia[(indice + 1) % secuencia.length];
+const filaSig = enCiclo[sig.idxFila];
+const finActual = new Date(inicio.getTime() + actual.duracion * 1000);
+const rotacion = posAncla >= 0 ? posAncla : 0;
+const rotada = secuencia.slice(rotacion).concat(secuencia.slice(0, rotacion));
+return {
+    ...base,
+    secuencia,
+    rotada,
+    real,
+    anclaDesde,
+    vpsRelleno: vigente && estado?.aireRelleno === true,
+    alAire: {
+      filaId: filaActual._id,
+      filaTitulo: filaActual.titulo || '',
+      filaPosicion: filaActual.posicion,
+      tipo: filaActual.tipo,
+      playlistNombre: filaActual.playlistNombre,
+      filaInicio: new Date(inicioFila),
+      filaFin: new Date(inicioFila + filaActual.duracion * 1000),
+      filaDuracion: filaActual.duracion,
+      videoTitulo: actual.titulo,
+      videoUrl: actual.url,
+      videoIndice: actual.idxVideo + 1,
+      videosFila: actual.videosFila,
+      videoInicio: inicio,
+      videoFin: finActual,
+      videoDuracion: actual.duracion
+    },
+    siguiente: {
+      filaId: filaSig._id,
+      filaTitulo: filaSig.titulo || '',
+      filaPosicion: filaSig.posicion,
+      tipo: filaSig.tipo,
+      playlistNombre: filaSig.playlistNombre,
+      mismaFila: filaSig._id === filaActual._id && sig.idxVideo > actual.idxVideo,
+      videoTitulo: sig.titulo,
+      videoIndice: sig.idxVideo + 1,
+      videosFila: sig.videosFila,
+      inicio: finActual,
+      duracion: sig.duracion
+    }
+  };
+}
+// ---------------------------------------------------------------- respuestas públicas
+/**
+ * Respuesta para el VPS (misma forma que qtdTransmision). Los campos que el VPS usa como
+ * "firma" (origen, inicioEmision, modoEmision, playlistId, tituloActual, urlTransmision)
+ * sólo cambian con "Transmitir ahora": reordenar o agregar filas no corta la señal.
+ */
+export async function construirTransmision(codigo) {
+const vacio = { transmision: null, playlist: null, elementos: [] };
+const lt = await calcularLineaDeTiempo(codigo);
+if (!lt.canal) return { ok: false, codigo: 'CANAL_NO_ENCONTRADO', mensaje: 'El canal solicitado no existe.', ...vacio };
+if (!lt.rotada.length) {
+return { ok: false, codigo: 'SIN_TRANSMISION_ACTIVA', mensaje: 'La parrilla del canal no tiene filas activas con duración.', ...vacio };
+  }
+return {
+    ok: true,
+    transmision: {
+      id: lt.canal._id,
+      registroTransmision: lt.canal.codigo,
+      canal: lt.canal.codigo,
+      nombre: lt.canal.nombre || '',
+      activa: true,
+      modoEmision: 'PLAYLIST',
+      origen: 'PARRILLA',
+      inicioEmision: lt.anclaDesde || null,
+      playlistId: '',
+      tituloActual: lt.canal.nombre || '',
+      urlTransmision: '',
+      enVivo: false,
+      // Informativo (no forma parte de la firma)
+      filaAlAire: lt.alAire?.filaTitulo || '',
+      videoAlAire: lt.alAire?.videoTitulo || '',
+      fechaActualizacion: new Date()
+    },
+    playlist: { id: 'parrilla', nombre: `Parrilla ${lt.canal.codigo}`, repetir: true },
+    elementos: lt.rotada.map((v, i) => ({
+      id: `${v.filaId}-${v.idxVideo + 1}`,
+      titulo: v.titulo || '',
+      tipoFuente: 'YOUTUBE',
+      referenciaVideo: v.url,
+      duracionSegundos: v.duracion,
+      orden: i + 1,
+      activo: true
+    }))
+  };
+}
+/** Videos que el VPS mantiene descargados: el primer video de cada fila activa. */
+export async function construirPrecarga(codigo) {
+const cod = normalizarCodigo(codigo);
+const canal = await obtenerCanal(cod);
+if (!canal) return { ok: false, codigo: 'CANAL_NO_ENCONTRADO', videos: [] };
+const filas = await obtenerFilas(cod);
+const videos = [];
+const vistos = new Set();
+  filas.filter((f) => f.activa && f.reproducible).forEach((f) => {
+const v = f.videos.find((x) => x.duracion > 0);
+if (!v || vistos.has(v.url) || inferirTipoFuente(v.url) !== 'YOUTUBE') return;
+    vistos.add(v.url);
+    videos.push({
+      id: f._id,
+      titulo: v.titulo || f.titulo || '',
+      tipoFuente: 'YOUTUBE',
+      referenciaVideo: v.url,
+      duracionSegundos: v.duracion,
+      orden: videos.length + 1,
+      activo: true
+    });
+  });
+return { ok: true, canal: cod, generado: new Date(), videos };
+}
+/** El VPS reporta lo que está al aire. Valida el token del canal (TVD_Canales.tokenVps). */
+export async function registrarAlAireVps(codigo, token, datos = {}) {
+const cod = normalizarCodigo(codigo);
+const canal = await obtenerCanal(cod);
+if (!canal) return { ok: false, codigo: 'CANAL_NO_ENCONTRADO' };
+if (!canal.tokenVps || texto(token, 200) !== canal.tokenVps) return { ok: false, codigo: 'NO_AUTORIZADO' };
+const actual = await obtenerEstadoCanal(cod);
+const registro = {
+    ...(actual || {}),
+    canalId: cod,
+    aireRelleno: datos.relleno === true,
+    aireVideoId: datos.relleno === true ? '' : texto(datos.id, 20),
+    aireTitulo: texto(datos.titulo, 300),
+    aireDuracion: Math.max(0, Number(datos.duracion) || 0),
+    aireInicio: fechaValida(datos.inicio) || new Date(),
+    aireReportado: new Date()
+  };
+if (actual) await wixData.update(COL.ESTADO, registro, OPC);
+else await wixData.insert(COL.ESTADO, registro, OPC);
+return { ok: true };
+}
+/** Lista pública de canales activos para las apps. */
+export async function resolverEOAppPublica(codigo) {
+  const valor = texto(codigo,200);
+  if (!/^EO\d{3,}(?:-TVD-[A-Za-z0-9_-]+)?$/.test(valor)) throw new Error('EO_INVALIDA');
+  const campo = /^EO\d{3,}$/.test(valor) ? 'codigoEO' : 'codigoContexto';
+  const r = await wixData.query('SCaD_EO').eq('app','TVD').eq(campo,valor).eq('activo',true).limit(2).find(OPC);
+  if (r.items.length !== 1 || !r.items[0].codigoContexto) throw new Error('EO_NO_DISPONIBLE');
+  const e = r.items[0];
+  const logo = e.logoEO || e.logoEo || '';
+  return { contexto:{ app:'TVD',codigoEO:e.codigoEO,codigoContexto:e.codigoContexto },
+    eo:{ nombre:texto(e.nombreVisible || e.nombre || e.codigoEO,120),
+      logo:typeof logo === 'string' && /^https:\/\//i.test(logo) ? logo : '' } };
+}
+export async function listarCanalesPublicos(opciones = {}) {
+let r = await wixData.query(COL.CANALES).eq('activo', true).ascending('orden').limit(100).find(OPC);
+const items = [...r.items];
+while (r.hasNext()) { r = await r.next(); items.push(...r.items); }
+const contexto = texto(opciones.codigoContexto,200);
+if (opciones.hub === true && contexto) throw new Error('CONTEXTO_AMBIGUO');
+const permitidos = items.filter(c => opciones.hub === true ? c.publicarHub === true : contexto
+  ? c.enteOperador === contexto || (Array.isArray(c.eoCompartidas) && c.eoCompartidas.includes(contexto)) : true);
+const tipoDe = (c) => texto(c.tipo, 20).toUpperCase() || 'VIRTUAL';
+const internas = [...new Set(permitidos
+    .filter((c) => tipoDe(c) !== 'VPS')
+    .map((c) => texto(c.playlistInterna, 120))
+    .filter(Boolean))];
+const programas = await programacionesInternas(internas);
+return permitidos.map((c) => {
+const tipo = tipoDe(c);
+const playlistInterna = tipo === 'VPS' ? '' : texto(c.playlistInterna, 120);
+return {
+      codigo: c.codigo,
+      ...(contexto ? { relacion:c.enteOperador === contexto ? 'PROPIO' : 'COMPARTIDO' } : {}),
+      numero: Number(c.numero) || 0,
+      nombre: c.nombre || '',
+      descripcion: c.descripcion || '',
+      tipo,
+      senal: tipo === 'VPS' ? (c.rutaHls || '') : '',
+      playlistYoutube: playlistInterna ? '' : (c.playlistYoutube || ''),
+      espacio: c.espacio || '',
+      // v2.1.0 · campos adicionales (los consumidores anteriores los ignoran)
+      origen: tipo === 'VPS' ? 'VPS' : (playlistInterna ? 'PLAYLIST_PANEL' : 'YOUTUBE'),
+      playlistInterna,
+      programacion: playlistInterna
+        ? { cicloOrigen: ORIGEN_CICLO, videos: programas.get(playlistInterna) || [] }
+        : null
+    };
+  });
+}
+/**
+ * Videos reproducibles de playlists del panel: activos, en orden, YouTube y con duración.
+ * Devuelve Map(_id de playlist -> [{ id, titulo, duracion }]).
+ * Reloj compartido: posición = (ahora - cicloOrigen) mod (suma de duraciones).
+ */
+export async function programacionesInternas(ids = []) {
+const mapa = new Map();
+const lista = (Array.isArray(ids) ? ids : []).map((x) => texto(x, 120)).filter(Boolean);
+if (!lista.length) return mapa;
+const r = await wixData.query(COL.ELEMENTOS).hasSome('playlistId', lista).eq('activo', true)
+    .ascending('orden').limit(1000).find(OPC);
+  lista.forEach((pid) => {
+    mapa.set(pid, r.items
+      .filter((e) => e.playlistId === pid)
+      .sort((a, b) => (Number(a.orden) || 0) - (Number(b.orden) || 0))
+      .map((e) => ({ id: idYoutube(e.referenciaVideo), titulo: e.titulo || '', duracion: Math.max(0, Math.floor(Number(e.duracionSegundos) || 0)) }))
+      .filter((v) => v.id && v.duracion > 0));
+  });
+return mapa;
+}

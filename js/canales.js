@@ -1,0 +1,49 @@
+/* TVD · adaptador público EO v0.1.0. Nunca acepta el catálogo global de CFCX. */
+(function () {
+  'use strict';
+  function programaDe(item, desfase) {
+    var p = item && item.programacion;
+    if (!p || !Array.isArray(p.videos)) return null;
+    var origen = Date.parse(p.cicloOrigen);
+    if (!Number.isFinite(origen)) return null;
+    var videos = p.videos.map(function (v) {
+      return { id:String(v && v.id || '').trim(),titulo:String(v && v.titulo || '').slice(0,200),duracion:Math.floor(Number(v && v.duracion)||0) };
+    }).filter(function (v) { return /^[\w-]{11}$/.test(v.id) && v.duracion > 0; });
+    return videos.length ? { videos:videos,origen:origen,desfase:desfase } : null;
+  }
+  function normalizar(items, desfase) {
+    var vistos = new Set();
+    return items.map(function (c) {
+      if (!c || typeof c !== 'object') return null;
+      var codigo=String(c.codigo||'').trim().toUpperCase(),tipo=String(c.tipo||'').toUpperCase();
+      if (!/^CH\d{2,}$/.test(codigo)||vistos.has(codigo)||c.activo===false||!['VPS','VIRTUAL'].includes(tipo)) return null;
+      vistos.add(codigo);
+      var url=String(c.rutaHls||c.senal||c.url||'').trim(),playlist=String(c.playlistYoutube||'').trim();
+      var match=/[?&]list=([\w-]+)/.exec(playlist);if(match)playlist=match[1];
+      return { codigo:codigo,numero:codigo.slice(2),nombre:String(c.nombre||codigo).slice(0,100),
+        tipo:tipo==='VPS'?'hls':'youtube',url:tipo==='VPS'&&/^https:\/\//i.test(url)?url:'',
+        playlist:tipo==='VIRTUAL'&&/^[\w-]{8,}$/.test(playlist)?playlist:'',
+        programa:tipo==='VIRTUAL'?programaDe(c,desfase):null,espacio:c.espacio||null,
+        relacion:c.relacion==='COMPARTIDO'?'COMPARTIDO':'PROPIO',orden:Number(c.orden)||Number(codigo.slice(2)) };
+    }).filter(Boolean).sort(function(a,b){return a.orden-b.orden || a.codigo.localeCompare(b.codigo);});
+  }
+  function validar(datos, eo) {
+    if (!datos || datos.ok!==true || !Array.isArray(datos.canales)) throw new Error('RESPUESTA_INVALIDA');
+    if (!window.TVD_CONTEXTO.coincide(datos.contexto,eo)) throw new Error('CONTEXTO_NO_CONFIRMADO');
+    if (!datos.eo || typeof datos.eo.nombre!=='string' || !datos.eo.nombre.trim()) throw new Error('IDENTIDAD_NO_CONFIRMADA');
+    var servidor=Date.parse(datos.ahora);
+    return { canales:normalizar(datos.canales,Number.isFinite(servidor)?servidor-Date.now():0),
+      contexto:datos.contexto,eo:datos.eo,origen:'PANEL_TV' };
+  }
+  async function cargar(cfg, contexto) {
+    if (!contexto.eo) throw new Error('EO_REQUERIDA');
+    var url=new URL(cfg.canalesPublicosUrl);url.searchParams.set('codigoEO',contexto.eo);url.searchParams.set('app','TVD');
+    var controller=new AbortController(),timer=setTimeout(function(){controller.abort();},cfg.timeoutMs);
+    try {
+      var r=await fetch(url.href,{cache:'no-store',mode:'cors',credentials:'omit',signal:controller.signal});
+      if (!r.ok) throw new Error('HTTP_'+r.status);
+      return validar(await r.json(),contexto.eo);
+    } finally { clearTimeout(timer); }
+  }
+  window.TVD_CANALES={cargar:cargar,validar:validar,normalizar:normalizar};
+})();
