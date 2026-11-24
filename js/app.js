@@ -120,23 +120,23 @@
     var u=new URL(location.pathname,location.origin);if(eo)u.searchParams.set('eo',eo);u.hash='/inicio';return u.href;
   }
   function direccionamiento() {
-    var hub=contexto.modo==='HUB';
-    return '<section class="section context-direction"><a class="row" '+(hub?'href="#" id="abrirCanalesEO" aria-haspopup="dialog"':'href="'+esc(enlaceContexto(''))+'"')+'>'+
-      '<span class="thumb">'+I.grid+'</span><span class="meta"><span class="kicker">'+(hub?'TVD HUB':'EXPLORAR')+'</span><span class="title" style="display:block">'+(hub?'Canales insignia de las EO':'TVD HUB')+'</span></span><span class="chev">'+I.chev+'</span></a></section>';
+    if(contexto.modo!=='HUB')return '<section class="section context-direction"><a class="row" href="'+esc(enlaceContexto(''))+'"><span class="thumb">'+I.grid+'</span><span class="meta"><span class="title">TVD HUB</span></span><span class="chev">'+I.chev+'</span></a></section>';
+    return '<section class="section context-direction"><button type="button" class="row context-toggle" id="abrirCanalesEO" aria-expanded="false" aria-controls="canalesEO"><span class="thumb">'+I.grid+'</span><span class="meta"><span class="title">Canales insignia</span></span><span class="chev">'+I.chev+'</span></button><div class="context-dropdown" id="canalesEO" hidden><div class="search-wrap"><input class="search" id="buscarCanalEO" type="search" placeholder="Buscar canal" aria-label="Buscar canal"><button type="button" class="icon-btn" id="limpiarCanalEO" aria-label="Limpiar búsqueda">✕</button></div><div class="list" id="listaCanalesEO"></div></div></section>';
   }
-  var dialogoEO=document.getElementById('canalesEO');
+  function cerrarSelectorEO(){var panel=document.getElementById('canalesEO'),boton=document.getElementById('abrirCanalesEO');if(panel)panel.hidden=true;if(boton)boton.setAttribute('aria-expanded','false');}
+  document.addEventListener('click',function(e){if(!e.target.closest('.context-direction'))cerrarSelectorEO();});
+  document.addEventListener('keydown',function(e){if(e.key==='Escape'){var boton=document.getElementById('abrirCanalesEO'),panel=document.getElementById('canalesEO');if(panel&&!panel.hidden){cerrarSelectorEO();boton.focus();}}});
   function pintarSelectorEO() {
     var filtro=norm(document.getElementById('buscarCanalEO').value);
     var empresas=(DATA.directorioEO||[]).filter(function(e){return norm(e.nombre+' '+e.canalInsignia.nombre+' '+e.canalInsignia.codigo).includes(filtro);});
     var lista=document.getElementById('listaCanalesEO');lista.replaceChildren();
     empresas.forEach(function(e){
       var enlace=document.createElement('a');enlace.className='row';enlace.href=enlaceContexto(e.codigoEO);
-      enlace.setAttribute('aria-label','Entrar a '+e.nombre+' · '+e.canalInsignia.nombre);
-      var imagen=/^https:\/\//i.test(e.logo||'')?'<img class="context-eo-logo" src="'+esc(e.logo)+'" alt="">':I.play;
-      enlace.innerHTML='<span class="thumb">'+imagen+'</span><span class="meta"><span class="kicker">CANAL INSIGNIA · '+esc(e.canalInsignia.codigo)+'</span><span class="title" style="display:block">'+esc(e.canalInsignia.nombre)+'</span><span class="muted" style="display:block;font-size:12px">'+esc(e.nombre)+'</span></span><span class="chev">'+I.chev+'</span>';
+      enlace.setAttribute('aria-label',e.canalInsignia.codigo+' '+e.canalInsignia.nombre);
+      enlace.innerHTML='<span class="meta"><span class="title">'+esc(e.canalInsignia.codigo)+' '+esc(e.canalInsignia.nombre)+'</span></span><span class="chev">'+I.chev+'</span>';
       lista.append(enlace);
     });
-    if(!empresas.length){var aviso=document.createElement('p');aviso.className='muted';aviso.textContent=errorCanales||!DATA.directorioDisponible?'El directorio de empresas no está disponible en este momento.':filtro?'No hay empresas con este criterio.':'Todavía no hay empresas publicadas en el directorio.';lista.append(aviso);}
+    if(!empresas.length){var aviso=document.createElement('p');aviso.className='muted';aviso.textContent=errorCanales||!DATA.directorioDisponible?'Los canales no están disponibles en este momento.':filtro?'No hay canales con este criterio.':'Todavía no hay canales insignia disponibles.';lista.append(aviso);}
   }
   function canalInicial() {
     if(contexto.modo!=='EO')return '';
@@ -145,10 +145,6 @@
     var insignias=DATA.canales.filter(function(c){return c.esInsigniaEO===true;});
     return insignias.length===1?insignias[0].numero:'';
   }
-  document.getElementById('buscarCanalEO').oninput=pintarSelectorEO;
-  document.getElementById('limpiarCanalEO').onclick=function(){document.getElementById('buscarCanalEO').value='';pintarSelectorEO();};
-  document.getElementById('cerrarCanalesEO').onclick=function(){dialogoEO.close();};
-
   // ---------------------------------------------------------- reproductor de videoteca
   var modal = document.createElement('div');
   modal.className = 'modal';
@@ -286,7 +282,7 @@
     });
     monitorActual = mon;
     limpieza.push(function () { if (monitorActual === mon) monitorActual = null; mon.destroy(); });
-    var acceso=document.getElementById('abrirCanalesEO');if(acceso)acceso.onclick=function(e){e.preventDefault();pintarSelectorEO();dialogoEO.showModal();};
+    var acceso=document.getElementById('abrirCanalesEO');if(acceso){acceso.onclick=function(){var panel=document.getElementById('canalesEO');panel.hidden=!panel.hidden;acceso.setAttribute('aria-expanded',String(!panel.hidden));if(!panel.hidden){pintarSelectorEO();document.getElementById('buscarCanalEO').focus();}};document.getElementById('buscarCanalEO').oninput=pintarSelectorEO;document.getElementById('limpiarCanalEO').onclick=function(){var campo=document.getElementById('buscarCanalEO');campo.value='';pintarSelectorEO();campo.focus();};}
     actualizarLeyendaCanales();
   };
 
@@ -576,7 +572,7 @@
       errorCanales=contextoError || 'No se pudieron cargar los canales. Vuelve a intentar en un momento.';
       console.warn('TVD · consulta pública',error.message);
     } finally {consultaEnCurso=false;}
-    if(anterior!==JSON.stringify(DATA)){router();if(dialogoEO.open)pintarSelectorEO();}else actualizarLeyendaCanales();
+    if(anterior!==JSON.stringify(DATA)){router();}else actualizarLeyendaCanales();
   }
   pintarBotonTema();pintarSesion();
   window.addEventListener('hashchange',router);

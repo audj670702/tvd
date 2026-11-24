@@ -1,4 +1,4 @@
-# TV Digital · App HUB / EO · v0.3.0
+# TV Digital · App HUB / EO · v0.3.1
 
 La app usa el modelo visual y las pantallas de CFCX: cabecera, tipografías, monitor, revista de Inicio, portadas/hemeroteca, Videoteca, Arcade, Mi app, temas y navegación inferior. `css/app.css` es una copia exacta del original. Las adaptaciones se concentran en identidad, fuentes públicas por contexto y el componente de dirección HUB/EO.
 
@@ -9,7 +9,7 @@ La app usa el modelo visual y las pantallas de CFCX: cabecera, tipografías, mon
 | https://tvd.scad.mx/ | HUB: canales autorizados para el HUB; acceso «Canales de las EO» con búsqueda y selección. |
 | https://tvd.scad.mx/?eo=EO013 | EO: identidad de la empresa, canales propios/compartidos y acceso «TVD HUB». |
 
-Los dos accesos de dirección usan el mismo lugar y diseño. Elegir una EO en el directorio del HUB abre su app y su canal insignia. El selector integrado en el monitor cambia canales dentro del contexto actual. El enlace difundido por una EO abre directamente su app, sin formularios de empresa, login ni validación del viewer.
+Los dos accesos de dirección usan el mismo lugar y diseño. «Canales insignia» despliega una lista con búsqueda, sin modal; cada entrada muestra código y nombre del canal. Elegir una EO en el directorio del HUB abre su app y su canal insignia. El selector integrado en el monitor cambia canales dentro del contexto actual. El enlace difundido por una EO abre directamente su app, sin formularios de empresa, login ni validación del viewer.
 
 El portal comercial está separado en https://www.scad.mx/tvdigital y tiene su propio diseño y propósito. Los paneles administrativos mantienen su validación; no forman parte del acceso público de esta app.
 

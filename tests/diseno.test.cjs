@@ -17,9 +17,9 @@ async function abrir(eo,fallo=false){
   const dom=await abrir(eo),w=dom.window,d=w.document;
   assert.equal(d.querySelectorAll('.tabbar a').length,5);assert(d.querySelector('.revista-home'));assert(d.querySelector('#monitor .tv-screen'));assert.equal(d.querySelector('#codigoEO'),null);assert.equal(d.querySelector('#login'),null);
   if(!eo){
-   d.querySelector('#abrirCanalesEO').click();assert(d.querySelector('#canalesEO').open);assert.equal(d.querySelectorAll('#listaCanalesEO .row').length,2);
+   d.querySelector('#abrirCanalesEO').click();assert.equal(d.querySelector('#canalesEO').hidden,false);assert.equal(d.querySelector('#abrirCanalesEO').textContent,'Canales insignia');assert.equal(d.querySelector('dialog#canalesEO'),null);assert.equal(d.querySelector('#abrirCanalesEO').getAttribute('aria-expanded'),'true');assert.equal(d.querySelector('#listaCanalesEO .title').textContent,'CH01 Insignia Uno');assert.equal(d.querySelectorAll('#listaCanalesEO .row').length,2);
    d.querySelector('#buscarCanalEO').value='Tocho';d.querySelector('#buscarCanalEO').dispatchEvent(new w.Event('input'));assert.equal(d.querySelectorAll('#listaCanalesEO .row').length,1);
-   const enlace=d.querySelector('#listaCanalesEO .row');assert.equal(enlace.tagName,'A');assert.equal(new URL(enlace.href).searchParams.get('eo'),'EO015');assert.equal(w.location.search,'');assert(d.querySelector('[data-role=osd]').textContent.includes('01'));d.querySelector('#cerrarCanalesEO').click();
+   const enlace=d.querySelector('#listaCanalesEO .row');assert.equal(enlace.tagName,'A');assert.equal(new URL(enlace.href).searchParams.get('eo'),'EO015');assert.equal(w.location.search,'');assert(d.querySelector('[data-role=osd]').textContent.includes('01'));d.querySelector('#limpiarCanalEO').click();assert.equal(d.querySelectorAll('#listaCanalesEO .row').length,2);d.dispatchEvent(new w.KeyboardEvent('keydown',{key:'Escape'}));assert(d.querySelector('#canalesEO').hidden);d.querySelector('#abrirCanalesEO').click();d.body.click();assert(d.querySelector('#canalesEO').hidden);
   }else{
    assert(d.querySelector('.wordmark').textContent.includes('EMPRESA DE PRUEBA'));
    assert(d.querySelector('[data-role=osd]').textContent.includes('07'));
