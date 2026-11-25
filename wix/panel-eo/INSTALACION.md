@@ -2,7 +2,7 @@
 
 ## Instalar
 
-1. Sustituir `backend/tvdPanel.web.js` con `tvdPanel_web_v2.6.0_EO.txt` completo. No crear otro backend. Reemplaza la entrega v2.5.0 SYS.
+1. Sustituir `backend/tvdPanel.web.js` con `tvdPanel_web_v2.6.1_EO.txt` completo. No crear otro backend. Reemplaza la entrega v2.5.0 SYS.
 2. En la página Wix `Panel_TVD_EO`, establecer slug `/panel-tvd-eo`. Usar una sección `seccPanel` y un elemento Insertar HTML con ID `htmlPanel`, según la maqueta previa.
 3. Pegar `Panel_TVD_EO_HTML_v0.2.1.txt` en `htmlPanel`.
 4. Pegar `Panel_TVD_EO_Velo_v0.2.1.txt` como código de esa página.
@@ -46,3 +46,5 @@ La interfaz se verificó con DOM y respuestas aisladas. No se inició una suscri
 `sys.web.js` con sysResolveEOAdminContext; sysComercial.js y sysComercialCore.js; tvdNucleo.js v2.3.0; tvdSalidas.js; colecciones actuales. Se reutilizan, no se reemplazan. `TVD_Suscripciones` y `tvdSuscripcion.web.js` de la entrega descartada no se utilizan.
 
 Corrección v0.2.1: pantalla de acceso superior con Iniciar sesión visible desde el HTML inicial; monitor y toda la operación ocultos hasta AUTORIZADO. HTML y Velo deben usar ambos protocolo 0.2.1. Tras 10 intentos sin respuesta se muestra un diagnóstico de conexión con la página.
+
+Corrección backend v2.6.1: ingresar y Revalidar llaman vigenciaEO(eo,{forzar:true}) de SYS; las operaciones conservan la caché común. No cambia la política de estados de pago ni modifica órdenes.

@@ -1,0 +1,737 @@
+// TV DIGITAL · backend/tvdPanel.web.js · v2.6.1
+// Propietaria: enteOperador. Distribución: eoCompartidas y publicarHub.
+import wixData from 'wix-data';
+import { sysResolveEOAdminContext } from 'backend/sys.web';
+import { comercial } from 'backend/sysComercial';
+const COMERCIAL_TVD = comercial({ APP:'TVD', PLANES:[{id:'983d6ede-7678-4ac7-a367-1046de1308a6',nivel:'BASICO'}], NIVELES:['BASICO'] });
+import { webMethod, Permissions } from 'wix-web-module';
+import { currentMember } from 'wix-members-backend';
+import {
+  COL,
+  OPC,
+  TIPOS_FILA,
+  texto,
+  segundos,
+  normalizarCodigo,
+  inferirTipoFuente,
+  resolverPlaylistId,
+  duracionPlaylistActiva,
+  calcularLineaDeTiempo,
+  obtenerEstadoCanal,
+  ORIGEN_CICLO, listarCanalesPublicos
+} from 'backend/tvdNucleo';
+import { DESTINOS, MODOS, normalizarDestino, obtenerSalida, guardarRegistro, resumenSalida, evaluarTermino } from 'backend/tvdSalidas';
+const COLECCION_ADMIN = 'QTD_Administradores';
+const ESCRITURA = { suppressAuth: true };
+const APP_TVD = 'TVD';
+const COLECCION_EO = 'SCaD_EO';
+// ---------------------------------------------------------------- acceso
+async function administradorActual() {
+let miembro = null;
+try {
+    miembro = await currentMember.getMember();
+  } catch (_) {
+return null;
+  }
+const memberId = miembro?._id || '';
+if (!memberId) return null;
+const r = await wixData
+    .query(COLECCION_ADMIN)
+    .eq('memberId', memberId)
+    .eq('activo', true)
+    .limit(1)
+    .find(OPC);
+const admin = r.items[0];
+return admin ? { memberId, nombre: admin.nombre || 'Administrador', rol: admin.rol || 'ADMIN' } : null;
+}
+async function exigirAdministrador() {
+const admin = await administradorActual();
+if (!admin) throw new Error('NO_AUTORIZADO');
+return admin;
+}
+async function registrar(admin, accion, canalId = '', detalle = '') {
+try {
+await wixData.insert(COL.BITACORA, {
+      accion: texto(accion, 80),
+      canalId: normalizarCodigo(canalId),
+      detalle: texto(detalle, 1000),
+      adminMemberId: admin.memberId,
+      adminNombre: admin.nombre,
+      fecha: new Date()
+    }, ESCRITURA);
+  } catch (error) {
+    console.warn('TVD: no se pudo registrar en bitácora:', error);
+  }
+}
+function fecha(valor) {
+if (!valor) return null;
+const f = new Date(valor);
+return Number.isNaN(f.getTime()) ? null : f;
+}
+export const tvdAcceso = webMethod(Permissions.Anyone, async () => {
+let miembro = null;
+try { miembro = await currentMember.getMember(); } catch (_) { miembro = null; }
+if (!miembro?._id) return { autorizado: false, motivo: 'NO_LOGIN' };
+const admin = await administradorActual();
+if (!admin) return { autorizado: false, motivo: 'NO_AUTORIZADO' };
+return { autorizado: true, administrador: { nombre: admin.nombre, rol: admin.rol } };
+});
+// Consulta administrativa: la vigencia y sus efectos pertenecen al módulo común SYS.
+export const tvdListarSuscripciones = webMethod(Permissions.SiteMember, async () => {
+  await exigirAdministrador();
+  const eos=await listarCompleto(wixData.query(COLECCION_EO).eq('app',APP_TVD).eq('activo',true).ascending('codigoEO'));
+  const suscripciones=[];
+  for(const eo of eos){
+    const base={codigoEO:eo.codigoEO,nombre:eo.nombreVisible||eo.nombre||eo.codigoEO};
+    try{
+      const vigente=await COMERCIAL_TVD.vigenciaEO(eo);
+      suscripciones.push({...base,vigente,estado:vigente?'VIGENTE':'SIN_VIGENCIA'});
+    }catch(error){console.warn('TVD · SYS Comercial',eo.codigoEO,error);suscripciones.push({...base,vigente:false,estado:'ERROR_VERIFICACION'});}
+  }
+  return {planId:'983d6ede-7678-4ac7-a367-1046de1308a6',planNombre:'TV Digital',fuente:'SYS',suscripciones};
+});
+// ---------------------------------------------------------------- canales
+async function listarCompleto(consulta) {
+  let pagina = await consulta.limit(100).find(OPC);
+  const items = [...pagina.items];
+  while (pagina.hasNext()) { pagina = await pagina.next(); items.push(...pagina.items); }
+  return items;
+}
+function resumenCanalGestion(c) {
+  return { _id:c._id, codigo:c.codigo, numero:c.numero, nombre:c.nombre, tipo:c.tipo,
+    activo:c.activo === true, ...configuracionDistribucion(c) };
+}
+export const tvdListarCanales = webMethod(Permissions.SiteMember, async (opciones = {}) => {
+  await exigirAdministrador();
+  const canales = await listarCompleto(wixData.query(COL.CANALES).ascending('orden'));
+  if (opciones?.gestionEO === true) {
+    const eos = await listarCompleto(wixData.query(COLECCION_EO).eq('app',APP_TVD).eq('activo',true).ascending('codigoEO'));
+    return { canales:canales.map(resumenCanalGestion), cicloOrigen:ORIGEN_CICLO,
+      eos:eos.filter(e => e.codigoContexto).map(e => ({ codigoEO:e.codigoEO,
+        codigoContexto:e.codigoContexto, nombre:e.nombreVisible || e.nombre || e.codigoEO })) };
+  }
+  return { canales:canales.map(({ tokenVps, ...c }) => c), cicloOrigen:ORIGEN_CICLO };
+});
+function configuracionDistribucion(c = {}) {
+  return { enteOperador:typeof c.enteOperador === 'string' ? c.enteOperador : '',
+    eoCompartidas:Array.isArray(c.eoCompartidas) ? [...new Set(c.eoCompartidas.filter(e => typeof e === 'string' && e))].sort() : [],
+    publicarHub:c.publicarHub === true, esInsigniaEO:c.esInsigniaEO === true };
+}
+function validarConfiguracion(c) {
+  if(c && c.esInsigniaEO !== undefined && typeof c.esInsigniaEO !== 'boolean') throw new Error('INSIGNIA_INVALIDA');
+  if (!c || typeof c.enteOperador !== 'string' || !Array.isArray(c.eoCompartidas) ||
+    c.eoCompartidas.some(e => typeof e !== 'string' || !e.trim() || e.length > 200) ||
+    typeof c.publicarHub !== 'boolean' || c.enteOperador.length > 200) throw new Error('CONFIGURACION_INVALIDA');
+  return configuracionDistribucion({ enteOperador:c.enteOperador.trim(),
+    eoCompartidas:c.eoCompartidas.map(e => e.trim()), publicarHub:c.publicarHub,esInsigniaEO:c.esInsigniaEO === true });
+}
+async function guardarDistribucionCanal(datos, admin) {
+  const codigo = normalizarCodigo(datos.codigo);
+  const id = texto(datos._id,80);
+  if (!/^CH\d{2}$/.test(codigo) || !id) throw new Error('CANAL_REQUERIDO');
+  const anterior = validarConfiguracion(datos.estadoAnterior);
+  const nueva = validarConfiguracion(datos);
+  nueva.eoCompartidas = nueva.eoCompartidas.filter(e => e !== nueva.enteOperador);
+  const actual = await wixData.get(COL.CANALES,id,OPC);
+  if (!actual || actual.codigo !== codigo) throw new Error('CANAL_NO_ENCONTRADO');
+  const guardada = configuracionDistribucion(actual);
+  if (JSON.stringify(guardada) !== JSON.stringify(anterior)) throw new Error('CONFIGURACION_MODIFICADA_RECARGA');
+  const eos = await listarCompleto(wixData.query(COLECCION_EO).eq('app',APP_TVD).eq('activo',true));
+  const disponibles = new Set(eos.map(e => e.codigoContexto).filter(Boolean));
+  const comprobar = [nueva.enteOperador,...nueva.eoCompartidas].filter(Boolean);
+  for (const contexto of comprobar) {
+    const conservado = contexto === nueva.enteOperador
+      ? contexto === guardada.enteOperador
+      : guardada.eoCompartidas.includes(contexto);
+    if (!disponibles.has(contexto) && !conservado) throw new Error('EO_NO_DISPONIBLE');
+  }
+  if (nueva.esInsigniaEO) {
+    if (!nueva.enteOperador) throw new Error('INSIGNIA_REQUIERE_EO_PROPIETARIA');
+    if (actual.activo !== true) throw new Error('INSIGNIA_REQUIERE_CANAL_ACTIVO');
+    const otros=await listarCompleto(wixData.query(COL.CANALES).eq('enteOperador',nueva.enteOperador));
+    if (otros.some(c => c._id !== actual._id && c.esInsigniaEO === true)) throw new Error('EO_YA_TIENE_INSIGNIA_DESMARCA_LA_ANTERIOR');
+  }
+  if (JSON.stringify(guardada) === JSON.stringify(nueva)) return { ok:true, canal:resumenCanalGestion(actual) };
+  const resultado = await wixData.update(COL.CANALES,{ ...actual, ...nueva },ESCRITURA);
+  await registrar(admin,'CANAL_DISTRIBUCION_GUARDADA',codigo,
+    JSON.stringify({ anterior:guardada, nueva }));
+  return { ok:true, canal:resumenCanalGestion(resultado) };
+}
+async function asignarEOCanal(datos, admin) {
+  const codigo = normalizarCodigo(datos.codigo);
+  const id = texto(datos._id,80);
+  if (!/^CH\d{2}$/.test(codigo) || !id) throw new Error('CANAL_REQUERIDO');
+  if (typeof datos.enteOperador !== 'string' || typeof datos.enteOperadorAnterior !== 'string') throw new Error('DATOS_INCOMPLETOS');
+  const contexto = datos.enteOperador.trim();
+  if (contexto.length > 200) throw new Error('EO_INVALIDA');
+  if (contexto) {
+    const eos = await wixData.query(COLECCION_EO).eq('codigoContexto',contexto).eq('app',APP_TVD).eq('activo',true).limit(2).find(OPC);
+    if (eos.items.length !== 1) throw new Error('EO_NO_DISPONIBLE');
+  }
+  const actual = await wixData.get(COL.CANALES,id,OPC);
+  if (!actual || actual.codigo !== codigo) throw new Error('CANAL_NO_ENCONTRADO');
+  const anterior = actual.enteOperador || '';
+  if (anterior !== datos.enteOperadorAnterior) throw new Error('ASIGNACION_MODIFICADA_RECARGA');
+  if (anterior === contexto) return { ok:true, canal:resumenCanalGestion(actual) };
+  const guardado = await wixData.update(COL.CANALES,{ ...actual, enteOperador:contexto, esInsigniaEO:anterior === contexto && actual.esInsigniaEO === true, eoCompartidas:configuracionDistribucion(actual).eoCompartidas.filter(e => e !== contexto) },ESCRITURA);
+  await registrar(admin,'CANAL_EO_ASIGNADA',codigo,`${anterior || 'SIN EO'} → ${contexto || 'SIN EO'}`);
+  return { ok:true, canal:resumenCanalGestion(guardado) };
+}
+export const tvdGuardarCanal = webMethod(Permissions.SiteMember, async (datos = {}) => {
+const admin = await exigirAdministrador();
+if (datos?.accion === 'GUARDAR_DISTRIBUCION') return guardarDistribucionCanal(datos,admin);
+if (datos?.accion === 'ASIGNAR_EO') return asignarEOCanal(datos,admin);
+const codigo = normalizarCodigo(datos.codigo);
+if (!/^CH\d{2}$/.test(codigo)) throw new Error('CODIGO_INVALIDO');
+const tipo = texto(datos.tipo, 20).toUpperCase() === 'VPS' ? 'VPS' : 'VIRTUAL';
+const dePanel = tipo === 'VIRTUAL' && texto(datos.origen, 20).toUpperCase() === 'PLAYLIST_PANEL';
+let playlistInterna = '';
+if (dePanel) {
+    playlistInterna = await resolverPlaylistId(datos.playlistInterna);
+if (!playlistInterna) throw new Error('PLAYLIST_REQUERIDA');
+if ((await duracionPlaylistActiva(playlistInterna)) <= 0) throw new Error('PLAYLIST_SIN_DURACION');
+  }
+const registro = {
+    codigo,
+    numero: Number(codigo.slice(2)),
+    nombre: texto(datos.nombre, 80),
+    descripcion: texto(datos.descripcion, 500),
+    tipo,
+    rutaHls: tipo === 'VPS' ? texto(datos.rutaHls, 500) : '',
+    playlistYoutube: tipo === 'VIRTUAL' && !dePanel ? texto(datos.playlistYoutube, 120) : '',
+    playlistInterna,
+    espacio: texto(datos.espacio, 40).toLowerCase(),
+    orden: Number(datos.orden) || Number(codigo.slice(2)),
+    activo: datos.activo === true
+  };
+if (!registro.nombre) throw new Error('NOMBRE_REQUERIDO');
+const existente = await wixData.query(COL.CANALES).eq('codigo', codigo).limit(1).find(OPC);
+const actual = existente.items[0];
+if (datos._id && actual && actual._id !== datos._id) throw new Error('CODIGO_DUPLICADO');
+if (!datos._id && actual) throw new Error('CODIGO_DUPLICADO');
+const guardado = actual
+    ? await wixData.update(COL.CANALES, { ...actual, ...registro }, ESCRITURA)
+    : await wixData.insert(COL.CANALES, registro, ESCRITURA);
+await registrar(admin, actual ? 'CANAL_EDITADO' : 'CANAL_CREADO', codigo, registro.nombre);
+return { ok: true, canal: guardado };
+});
+// ---------------------------------------------------------------- parrilla (secuencia en ciclo)
+// La parrilla es una lista ordenada (campo `orden`). Inicio y fin se calculan; no se capturan.
+// Sólo "Transmitir ahora" corta la señal; agregar, reordenar o activar es programación.
+async function filasOrdenadas(cod) {
+const r = await wixData.query(COL.PARRILLA).eq('canalId', cod)
+    .ascending('orden').ascending('_createdDate').limit(1000).find(OPC);
+return r.items;
+}
+/** Renumera `orden` 1..n según la lista de registros recibida (sólo escribe los que cambian). */
+async function renumerar(registros) {
+let orden = 1;
+for (const e of registros) {
+if (Number(e.orden) !== orden) {
+await wixData.update(COL.PARRILLA, { ...e, orden }, ESCRITURA);
+    }
+    orden += 1;
+  }
+}
+function resumenFila(f) {
+return {
+    _id: f._id,
+    posicion: f.posicion,
+    orden: f.orden,
+    titulo: f.titulo || '',
+    descripcion: f.descripcion || '',
+    tipo: f.tipo,
+    contenidoId: f.contenidoId || '',
+    catalogoId: f.catalogoId || '',
+    url: f.url || '',
+    playlistNombre: f.playlistNombre || '',
+    duracion: f.duracion,
+    duracionSegundos: Number(f.duracionSegundos) || 0,
+    activa: f.activa,
+    reproducible: f.reproducible,
+    inicio: f.inicio || null,
+    fin: f.fin || null,
+    estado: f.estado || '',
+    videos: f.videos.map((v) => ({ titulo: v.titulo, duracion: v.duracion }))
+  };
+}
+/** Parrilla completa del canal con horarios calculados, al aire y siguiente. */
+async function op_tvdParrilla(admin, canalId) {
+const lt = await calcularLineaDeTiempo(canalId);
+return {
+    canal: lt.canal ? { codigo: lt.canal.codigo, nombre: lt.canal.nombre, tipo: lt.canal.tipo, rutaHls: lt.canal.rutaHls || '' } : null,
+    filas: lt.filas.map(resumenFila),
+    alAire: lt.alAire,
+    siguiente: lt.siguiente,
+    real: lt.real === true,
+    vpsRelleno: lt.vpsRelleno === true,
+    anclaDesde: lt.anclaDesde || null,
+    ahora: lt.ahora
+  };
+}
+export const tvdParrilla = webMethod(Permissions.SiteMember, async (canalId) => op_tvdParrilla(await exigirAdministrador(), canalId));
+/**
+ * Agrega o edita una fila.
+ * posicion: 'FINAL' (predeterminado al agregar), 'ACTUAL' (al editar) o un número 1..n.
+ */
+async function op_tvdGuardarFila(admin, datos = {}) {
+const cod = normalizarCodigo(datos.canalId);
+const tipo = texto(datos.tipoContenido, 40).toUpperCase();
+if (!cod) throw new Error('CANAL_REQUERIDO');
+if (!TIPOS_FILA.includes(tipo)) throw new Error('TIPO_INVALIDO');
+const canal = await wixData.query(COL.CANALES).eq('codigo', cod).limit(1).find(OPC);
+if (!canal.items.length) throw new Error('CANAL_NO_ENCONTRADO');
+const registro = {
+    canalId: cod,
+    tipoContenido: tipo,
+    titulo: texto(datos.titulo, 180),
+    descripcion: texto(datos.descripcion, 1000),
+    publicado: datos.publicado !== false,
+    contenidoId: '',
+    catalogoId: '',
+    url: '',
+    tipoFuente: '',
+    duracionSegundos: 0
+  };
+if (tipo === 'PLAYLIST') {
+const playlistId = await resolverPlaylistId(datos.contenidoId);
+if (!playlistId) throw new Error('PLAYLIST_REQUERIDA');
+if ((await duracionPlaylistActiva(playlistId)) <= 0) throw new Error('PLAYLIST_SIN_DURACION');
+    registro.contenidoId = playlistId;
+if (!registro.titulo) {
+const p = await wixData.get(COL.PLAYLISTS, playlistId, OPC);
+      registro.titulo = texto(p?.nombre, 180);
+    }
+  } else {
+const catalogoId = texto(datos.catalogoId, 80);
+let url = texto(datos.url, 1500);
+let duracion = segundos(datos.duracionSegundos);
+if (catalogoId) {
+const c = await wixData.get(COL.CATALOGO, catalogoId, OPC);
+if (!c) throw new Error('CATALOGO_NO_ENCONTRADO');
+if (!url && !texto(c.urlYoutube, 1500)) throw new Error('CATALOGO_SIN_YOUTUBE');
+      url = url || texto(c.urlYoutube, 1500);
+      duracion = duracion || segundos(c.duracion);
+      registro.titulo = registro.titulo || texto(c.nombreVideo || c.titulo, 180);
+      registro.catalogoId = catalogoId;
+    }
+if (!url) throw new Error('URL_REQUERIDA');
+if (inferirTipoFuente(url) !== 'YOUTUBE') throw new Error('URL_NO_YOUTUBE');
+if (duracion <= 0) throw new Error('DURACION_REQUERIDA');
+    registro.url = url;
+    registro.tipoFuente = 'YOUTUBE';
+    registro.duracionSegundos = duracion;
+  }
+if (!registro.titulo) throw new Error('TITULO_REQUERIDO');
+const id = texto(datos._id, 80);
+const lista = await filasOrdenadas(cod);
+let guardado;
+let resto = lista;
+if (id) {
+const actual = lista.find((e) => e._id === id);
+if (!actual) throw new Error('FILA_NO_ENCONTRADA');
+    guardado = await wixData.update(COL.PARRILLA, { ...actual, ...registro }, ESCRITURA);
+    resto = lista.filter((e) => e._id !== id);
+const pos = datos.posicion === 'ACTUAL' || datos.posicion === undefined
+      ? lista.findIndex((e) => e._id === id)
+      : (datos.posicion === 'FINAL' ? resto.length : Math.min(resto.length, Math.max(0, Number(datos.posicion) - 1)));
+    resto.splice(pos, 0, guardado);
+  } else {
+    guardado = await wixData.insert(COL.PARRILLA, { ...registro, orden: lista.length + 1 }, ESCRITURA);
+const pos = !datos.posicion || datos.posicion === 'FINAL'
+      ? resto.length
+      : Math.min(resto.length, Math.max(0, Number(datos.posicion) - 1));
+    resto = [...resto];
+    resto.splice(pos, 0, guardado);
+  }
+await renumerar(resto);
+await registrar(admin, id ? 'FILA_EDITADA' : 'FILA_AGREGADA', cod, registro.titulo);
+return { ok: true, fila: guardado };
+}
+export const tvdGuardarFila = webMethod(Permissions.SiteMember, async (datos = {}) => op_tvdGuardarFila(await exigirAdministrador(), datos));
+/** Nuevo orden de la parrilla: recibe la lista de _id en el orden deseado. No corta la señal. */
+async function op_tvdReordenarFilas(admin, canalId, ids = []) {
+const cod = normalizarCodigo(canalId);
+const lista = await filasOrdenadas(cod);
+const porId = new Map(lista.map((e) => [e._id, e]));
+const nuevo = (Array.isArray(ids) ? ids : []).map((x) => porId.get(x)).filter(Boolean);
+  lista.forEach((e) => { if (!nuevo.includes(e)) nuevo.push(e); });
+await renumerar(nuevo);
+await registrar(admin, 'PARRILLA_REORDENADA', cod, '');
+return { ok: true };
+}
+export const tvdReordenarFilas = webMethod(Permissions.SiteMember, async (canalId, ids = []) => op_tvdReordenarFilas(await exigirAdministrador(), canalId, ids));
+async function op_tvdCambiarActiva(admin, id, activa) {
+const actual = await wixData.get(COL.PARRILLA, texto(id, 80), OPC);
+if (!actual) throw new Error('FILA_NO_ENCONTRADA');
+await wixData.update(COL.PARRILLA, { ...actual, publicado: activa === true }, ESCRITURA);
+await registrar(admin, activa === true ? 'FILA_ACTIVADA' : 'FILA_DESACTIVADA', actual.canalId, actual.titulo);
+return { ok: true };
+}
+export const tvdCambiarActiva = webMethod(Permissions.SiteMember, async (id, activa) => op_tvdCambiarActiva(await exigirAdministrador(), id, activa));
+async function op_tvdEliminarFila(admin, id) {
+const actual = await wixData.get(COL.PARRILLA, texto(id, 80), OPC);
+if (!actual) throw new Error('FILA_NO_ENCONTRADA');
+await wixData.remove(COL.PARRILLA, actual._id, ESCRITURA);
+await renumerar(await filasOrdenadas(actual.canalId));
+await registrar(admin, 'FILA_ELIMINADA', actual.canalId, actual.titulo);
+return { ok: true, id: actual._id };
+}
+export const tvdEliminarFila = webMethod(Permissions.SiteMember, async (id) => op_tvdEliminarFila(await exigirAdministrador(), id));
+async function guardarEstado(canalId, cambios, admin) {
+const cod = normalizarCodigo(canalId);
+const actual = await obtenerEstadoCanal(cod);
+const registro = { ...(actual || {}), canalId: cod, ...cambios, actualizadoPor: admin.nombre, actualizado: new Date() };
+return actual ? wixData.update(COL.ESTADO, registro, ESCRITURA) : wixData.insert(COL.ESTADO, registro, ESCRITURA);
+}
+/** "Transmitir ahora": corte inmediato; la fila arranca ahora y el ciclo se recalcula desde ella. */
+async function op_tvdTransmitirAhora(admin, canalId, filaId) {
+const cod = normalizarCodigo(canalId);
+const fila = await wixData.get(COL.PARRILLA, texto(filaId, 80), OPC);
+if (!fila || fila.canalId !== cod) throw new Error('FILA_NO_ENCONTRADA');
+if (fila.publicado === false) throw new Error('FILA_INACTIVA');
+await guardarEstado(cod, {
+    anclaEntradaId: fila._id,
+    anclaDesde: new Date(),
+    manualEntradaId: '',
+    manualDesde: null
+  }, admin);
+await registrar(admin, 'TRANSMITIR_AHORA', cod, fila.titulo);
+return { ok: true };
+}
+export const tvdTransmitirAhora = webMethod(Permissions.SiteMember, async (canalId, filaId) => op_tvdTransmitirAhora(await exigirAdministrador(), canalId, filaId));
+// ---------------------------------------------------------------- playlists
+// Colecciones compartidas con el panel QTD actual (mismos campos y criterios).
+// Blindaje: no se elimina una playlist en uso por la transmisión QTD activa
+// ni por una entrada de la parrilla TVD.
+const COLECCION_TRANSMISION_QTD = 'QTD_Transmision';
+export const tvdListarPlaylists = webMethod(Permissions.SiteMember, async () => {
+await exigirAdministrador();
+const [listas, elementos] = await Promise.all([
+    wixData.query(COL.PLAYLISTS).ascending('orden').limit(1000).find(OPC),
+    wixData.query(COL.ELEMENTOS).eq('activo', true).limit(1000).find(OPC)
+  ]);
+return {
+    playlists: listas.items.map((p) => {
+const propios = elementos.items.filter((e) => e.playlistId === p._id);
+return {
+        _id: p._id,
+        nombre: p.nombre || '',
+        descripcion: p.descripcion || '',
+        activa: p.activa === true,
+        repetir: p.repetir !== false,
+        orden: Number(p.orden) || 1,
+        videos: propios.length,
+        duracionSegundos: propios.reduce((t, e) => t + Math.max(0, Number(e.duracionSegundos) || 0), 0)
+      };
+    })
+  };
+});
+export const tvdListarElementos = webMethod(Permissions.SiteMember, async (playlistId) => {
+await exigirAdministrador();
+const r = await wixData.query(COL.ELEMENTOS).eq('playlistId', texto(playlistId, 80))
+    .ascending('orden').limit(1000).find(OPC);
+return { elementos: r.items };
+});
+async function op_tvdGuardarPlaylist(admin, datos = {}) {
+const registro = {
+    ...(admin.enteOperador ? {enteOperador:admin.enteOperador} : {}),
+    nombre: texto(datos.nombre, 120),
+    descripcion: texto(datos.descripcion, 1000),
+    activa: datos.activa !== false,
+    repetir: datos.repetir !== false,
+    orden: Number(datos.orden) || 1,
+    fechaActualizacion: new Date()
+  };
+if (!registro.nombre) throw new Error('NOMBRE_REQUERIDO');
+const id = texto(datos._id, 80);
+let guardado;
+if (id) {
+const actual = await wixData.get(COL.PLAYLISTS, id, OPC);
+if (!actual) throw new Error('PLAYLIST_NO_ENCONTRADA');
+    guardado = await wixData.update(COL.PLAYLISTS, { ...actual, ...registro }, ESCRITURA);
+  } else {
+    guardado = await wixData.insert(COL.PLAYLISTS, { ...registro, registroPlaylist: `PLY-${Date.now()}` }, ESCRITURA);
+  }
+await registrar(admin, id ? 'PLAYLIST_EDITADA' : 'PLAYLIST_CREADA', '', registro.nombre);
+return { ok: true, playlist: guardado };
+}
+export const tvdGuardarPlaylist = webMethod(Permissions.SiteMember, async (datos = {}) => op_tvdGuardarPlaylist(await exigirAdministrador(), datos));
+async function op_tvdEliminarPlaylist(admin, playlistId) {
+const id = texto(playlistId, 80);
+if (!id) throw new Error('PLAYLIST_NO_ENCONTRADA');
+const [enQtd, enTvd, enCanal] = await Promise.all([
+    wixData.query(COLECCION_TRANSMISION_QTD).eq('playlistId', id).eq('activa', true).limit(1).find(OPC),
+    wixData.query(COL.PARRILLA).eq('contenidoId', id).limit(1).find(OPC),
+    wixData.query(COL.CANALES).eq('playlistInterna', id).limit(1).find(OPC)
+  ]);
+if (enQtd.items.length || enTvd.items.length || enCanal.items.length) throw new Error('PLAYLIST_EN_USO');
+const actual = await wixData.get(COL.PLAYLISTS, id, OPC);
+const elementos = await wixData.query(COL.ELEMENTOS).eq('playlistId', id).limit(1000).find(OPC);
+for (const e of elementos.items) await wixData.remove(COL.ELEMENTOS, e._id, ESCRITURA);
+await wixData.remove(COL.PLAYLISTS, id, ESCRITURA);
+await registrar(admin, 'PLAYLIST_ELIMINADA', '', actual?.nombre || id);
+return { ok: true, id, elementosEliminados: elementos.items.length };
+}
+export const tvdEliminarPlaylist = webMethod(Permissions.SiteMember, async (playlistId) => op_tvdEliminarPlaylist(await exigirAdministrador(), playlistId));
+function segundosDesdeTexto(valor) {
+if (typeof valor === 'number') return Math.max(0, Math.floor(valor));
+const partes = String(valor || '').trim().split(':').map(Number);
+if (!partes.length || partes.some((n) => Number.isNaN(n))) return 0;
+if (partes.length === 3) return partes[0] * 3600 + partes[1] * 60 + partes[2];
+if (partes.length === 2) return partes[0] * 60 + partes[1];
+return Math.max(0, partes[0] || 0);
+}
+async function op_tvdGuardarElemento(admin, datos = {}) {
+const referencia = texto(datos.referenciaVideo, 1500);
+const registro = {
+    playlistId: texto(datos.playlistId, 80),
+    titulo: texto(datos.titulo, 180),
+    descripcion: texto(datos.descripcion, 1000),
+    tipoFuente: texto(datos.tipoFuente, 30).toUpperCase() || inferirTipoFuente(referencia),
+    referenciaVideo: referencia,
+    imagenPortada: texto(datos.imagenPortada, 1500),
+    duracionSegundos: segundosDesdeTexto(datos.duracionSegundos),
+    activo: datos.activo !== false,
+    fechaActualizacion: new Date()
+  };
+if (!registro.playlistId || !registro.titulo || !registro.referenciaVideo) throw new Error('DATOS_INCOMPLETOS');
+if (registro.duracionSegundos <= 0) throw new Error('DURACION_REQUERIDA');
+const id = texto(datos._id, 80);
+let guardado;
+if (id) {
+const actual = await wixData.get(COL.ELEMENTOS, id, OPC);
+if (!actual) throw new Error('ELEMENTO_NO_ENCONTRADO');
+    guardado = await wixData.update(COL.ELEMENTOS, { ...actual, ...registro, orden: actual.orden }, ESCRITURA);
+  } else {
+const ultimo = await wixData.query(COL.ELEMENTOS).eq('playlistId', registro.playlistId)
+      .descending('orden').limit(1).find(OPC);
+const orden = (Number(ultimo.items[0]?.orden) || 0) + 1;
+    guardado = await wixData.insert(COL.ELEMENTOS, { ...registro, orden, registroElemento: `PLE-${Date.now()}` }, ESCRITURA);
+  }
+await registrar(admin, id ? 'ELEMENTO_EDITADO' : 'ELEMENTO_AGREGADO', '', registro.titulo);
+return { ok: true, elemento: guardado };
+}
+export const tvdGuardarElemento = webMethod(Permissions.SiteMember, async (datos = {}) => op_tvdGuardarElemento(await exigirAdministrador(), datos));
+async function op_tvdCambiarEstadoElemento(admin, id, activo) {
+const actual = await wixData.get(COL.ELEMENTOS, texto(id, 80), OPC);
+if (!actual) throw new Error('ELEMENTO_NO_ENCONTRADO');
+const guardado = await wixData.update(COL.ELEMENTOS, { ...actual, activo: activo === true, fechaActualizacion: new Date() }, ESCRITURA);
+await registrar(admin, activo === true ? 'ELEMENTO_ACTIVADO' : 'ELEMENTO_DESACTIVADO', '', actual.titulo);
+return { ok: true, elemento: guardado };
+}
+export const tvdCambiarEstadoElemento = webMethod(Permissions.SiteMember, async (id, activo) => op_tvdCambiarEstadoElemento(await exigirAdministrador(), id, activo));
+async function op_tvdEliminarElemento(admin, id) {
+const actual = await wixData.get(COL.ELEMENTOS, texto(id, 80), OPC);
+if (!actual) throw new Error('ELEMENTO_NO_ENCONTRADO');
+await wixData.remove(COL.ELEMENTOS, actual._id, ESCRITURA);
+await registrar(admin, 'ELEMENTO_ELIMINADO', '', actual.titulo);
+return { ok: true, id: actual._id };
+}
+export const tvdEliminarElemento = webMethod(Permissions.SiteMember, async (id) => op_tvdEliminarElemento(await exigirAdministrador(), id));
+/** Guarda el nuevo orden: recibe la lista de _id en el orden deseado. */
+async function op_tvdReordenarElementos(admin, playlistId, ids = []) {
+const pid = texto(playlistId, 80);
+const actuales = await wixData.query(COL.ELEMENTOS).eq('playlistId', pid).limit(1000).find(OPC);
+const porId = new Map(actuales.items.map((e) => [e._id, e]));
+let orden = 1;
+for (const id of (Array.isArray(ids) ? ids : [])) {
+const e = porId.get(id);
+if (!e) continue;
+if (Number(e.orden) !== orden) {
+await wixData.update(COL.ELEMENTOS, { ...e, orden, fechaActualizacion: new Date() }, ESCRITURA);
+    }
+    orden += 1;
+  }
+await registrar(admin, 'PLAYLIST_REORDENADA', '', pid);
+return { ok: true };
+}
+export const tvdReordenarElementos = webMethod(Permissions.SiteMember, async (playlistId, ids = []) => op_tvdReordenarElementos(await exigirAdministrador(), playlistId, ids));
+// ---------------------------------------------------------------- catálogo (sólo lectura)
+export const tvdListarCatalogo = webMethod(Permissions.SiteMember, async () => {
+await exigirAdministrador();
+const r = await wixData.query('QRO_Catalogo').descending('idRegistro').limit(1000).find(OPC);
+return {
+    catalogo: r.items.map((c) => ({
+      _id: c._id,
+      idRegistro: Number(c.idRegistro) || 0,
+      titulo: c.titulo || '',
+      nombreVideo: c.nombreVideo || '',
+      refContenido: c.refContenido || '',
+      corte: c.corte || '',
+      duracion: c.duracion || '',
+      duracionSegundos: segundosDesdeTexto(c.duracion),
+      fuentes: {
+        youtube: c.urlYoutube || '',
+        backblaze: c.urlBackblaze || '',
+        drive: c.urlGoogleDrive || '',
+        local: c.linkLocal || ''
+      }
+    }))
+  };
+});
+// ---------------------------------------------------------------- salidas Facebook / YouTube
+export const tvdListarSalidas = webMethod(Permissions.SiteMember, async () => {
+await exigirAdministrador();
+const salidas = [];
+for (const destino of Object.keys(DESTINOS)) {
+const s = await evaluarTermino(await obtenerSalida(destino));
+    salidas.push({ ...resumenSalida(destino, s), clave: s?.secretoClave || '' });
+  }
+return { salidas, ahora: new Date() };
+});
+/** Configuración: canal de origen, URL, clave (vacía = conservar) y tope de seguridad. */
+export const tvdGuardarSalida = webMethod(Permissions.SiteMember, async (destino, datos = {}) => {
+const admin = await exigirAdministrador();
+const d = normalizarDestino(destino);
+const actual = await obtenerSalida(d);
+const url = texto(datos.rtmpsUrl, 1500);
+const clave = texto(datos.clave, 1500);
+const canalId = normalizarCodigo(datos.canalId) || 'CH01';
+if (!/^rtmps?:\/\//i.test(url)) throw new Error('RTMPS_URL_INVALIDA');
+if (!clave && !actual?.secretoClave) throw new Error('RTMPS_KEY_REQUERIDA');
+const canal = await wixData.query(COL.CANALES).eq('codigo', canalId).eq('tipo', 'VPS').limit(1).find(OPC);
+if (!canal.items.length) throw new Error('CANAL_NO_VPS');
+if (actual?.activa && (actual.canalId !== canalId || actual.rtmpsUrl !== url || (clave && clave !== actual.secretoClave))) {
+throw new Error('SALIDA_ACTIVA');
+  }
+const topeSeg = Math.max(0, Math.floor(Number(datos.topeSeg) || 0));
+await guardarRegistro(d, {
+    canalId,
+    rtmpsUrl: url,
+    ...(clave ? { secretoClave: clave } : {}),
+    topeSeg
+  });
+await registrar(admin, 'SALIDA_CONFIGURADA', canalId, `${DESTINOS[d].nombre} · ${url}`);
+return resumenSalida(d, await obtenerSalida(d));
+});
+/**
+ * Iniciar: modo MANUAL, TIEMPO ({ duracionSeg } o { horaFin }) o CONTENIDO ({ filaId }).
+ */
+export const tvdIniciarSalida = webMethod(Permissions.SiteMember, async (destino, opciones = {}) => {
+const admin = await exigirAdministrador();
+const d = normalizarDestino(destino);
+const s = await obtenerSalida(d);
+if (!s?.rtmpsUrl || !s?.secretoClave) throw new Error('SALIDA_NO_CONFIGURADA');
+const modo = MODOS.includes(texto(opciones.modo, 20).toUpperCase()) ? texto(opciones.modo, 20).toUpperCase() : 'MANUAL';
+const ahora = new Date();
+const cambios = {
+    activa: true, modo, iniciadaEn: ahora, motivoFin: '', finalizadaEn: null,
+    terminoEn: null, filaId: '', filaTitulo: '', filaVista: false,
+    estadoVps: 'CONECTANDO', errorVps: '', desdeVps: ahora
+  };
+if (modo === 'TIEMPO') {
+const dur = Math.floor(Number(opciones.duracionSeg) || 0);
+const hora = opciones.horaFin ? new Date(opciones.horaFin) : null;
+if (dur > 0) cambios.terminoEn = new Date(ahora.getTime() + dur * 1000);
+else if (hora && !Number.isNaN(hora.getTime()) && hora > ahora) cambios.terminoEn = hora;
+else throw new Error('TERMINO_INVALIDO');
+  }
+if (modo === 'CONTENIDO') {
+const fila = await wixData.get(COL.PARRILLA, texto(opciones.filaId, 80), OPC);
+if (!fila || fila.canalId !== s.canalId) throw new Error('FILA_NO_ENCONTRADA');
+if (fila.publicado === false) throw new Error('FILA_INACTIVA');
+    cambios.filaId = fila._id;
+    cambios.filaTitulo = fila.titulo || '';
+  }
+await guardarRegistro(d, cambios);
+await registrar(admin, 'SALIDA_INICIADA', s.canalId, `${DESTINOS[d].nombre} · ${modo}`);
+return resumenSalida(d, await obtenerSalida(d));
+});
+export const tvdDetenerSalida = webMethod(Permissions.SiteMember, async (destino) => {
+const admin = await exigirAdministrador();
+const d = normalizarDestino(destino);
+const s = await obtenerSalida(d);
+if (!s) throw new Error('SALIDA_NO_CONFIGURADA');
+await guardarRegistro(d, { activa: false, motivoFin: 'MANUAL', finalizadaEn: new Date() });
+await registrar(admin, 'SALIDA_DETENIDA', s.canalId, DESTINOS[d].nombre);
+return resumenSalida(d, await obtenerSalida(d));
+});
+// ---------------------------------------------------------------- Panel EO: sesión y permisos SYS; vigencia SYS; recursos acotados.
+async function resolverEO(codigoEO,forzar=false){
+ if(!/^EO\d{3,}$/.test(String(codigoEO||'')))throw new Error('EO_REQUERIDA');
+ const m=await currentMember.getMember();if(!m?._id)throw new Error('NO_LOGIN');
+ const acceso=await sysResolveEOAdminContext({app:APP_TVD,codigoEO});
+ if(!acceso?.ok||!acceso.autorizado||acceso.eo?.app!==APP_TVD||acceso.eo?.codigoEO!==codigoEO)throw new Error('NO_AUTORIZADO_EO');
+ const eo=await wixData.get(COLECCION_EO,acceso.eo.id,OPC),usr=await wixData.get('SCaD_USR',acceso.eo.usrId,OPC);
+ if(!eo||eo.app!==APP_TVD||eo.activo!==true||!usr||usr.activo!==true||usr.memberId!==m._id||usr.app!==APP_TVD||usr.enteOperador!==eo.codigoContexto)throw new Error('NO_AUTORIZADO_EO');
+ const vigente=await COMERCIAL_TVD.vigenciaEO(eo,{forzar});
+ return {eo,usr,vigente,admin:{memberId:m._id,nombre:usr.nombreVisible||usr.nombre||'Administrador',enteOperador:eo.codigoContexto}};
+}
+export const tvdEOAcceso=webMethod(Permissions.Anyone,async(codigoEO='')=>{
+ let m;try{m=await currentMember.getMember();}catch(_){}
+ if(!m?._id)return {estado:'NO_LOGIN',mensaje:'Inicia sesión para administrar tu canal.'};
+ try{
+  if(!codigoEO){
+   const usrs=await listarCompleto(wixData.query('SCaD_USR').eq('app',APP_TVD).eq('memberId',m._id).eq('activo',true));
+   const eos=await listarCompleto(wixData.query(COLECCION_EO).eq('app',APP_TVD).eq('activo',true));
+   const opciones=eos.filter(e=>usrs.some(u=>u.enteOperador===e.codigoContexto&&(e.admPrincipal===u._id||e.admSys===u._id||(Array.isArray(u.roles)&&u.roles.includes('ADM')))));
+   if(opciones.length>1)return {estado:'SELECCIONAR_EO',mensaje:'Selecciona la empresa que quieres administrar.',eos:opciones.map(e=>({codigoEO:e.codigoEO,nombre:e.nombreVisible||e.nombre}))};
+   if(opciones.length!==1)return {estado:'DENEGADO',mensaje:'Tu cuenta no tiene una empresa disponible para administrar.'};
+   codigoEO=opciones[0].codigoEO;
+  }
+  const c=await resolverEO(codigoEO,true);
+  return {estado:c.vigente?'AUTORIZADO':'SIN_PLAN',mensaje:c.vigente?'Acceso autorizado.':'La suscripción de tu empresa no está vigente.',eo:{codigoEO:c.eo.codigoEO,nombre:c.eo.nombreVisible||c.eo.nombre},planId:'983d6ede-7678-4ac7-a367-1046de1308a6'};
+ }catch(e){console.warn('TVD EO acceso',e);return {estado:'DENEGADO',mensaje:'No se pudo autorizar la empresa solicitada.'};}
+});
+async function canalEO(c,codigo,editar=false){
+ const r=await wixData.query(COL.CANALES).eq('codigo',normalizarCodigo(codigo)).limit(2).find(OPC);
+ const canal=r.items[0];if(r.items.length!==1||!canal)throw new Error('CANAL_NO_AUTORIZADO');
+ const propio=canal.enteOperador===c.eo.codigoContexto;
+ if(!propio&&(editar||!Array.isArray(canal.eoCompartidas)||!canal.eoCompartidas.includes(c.eo.codigoContexto)))throw new Error('CANAL_NO_AUTORIZADO');
+ return canal;
+}
+async function playlistEO(c,id){
+ const p=await wixData.get(COL.PLAYLISTS,texto(id,80),OPC);
+ if(!p||p.enteOperador!==c.eo.codigoContexto)throw new Error('PLAYLIST_NO_AUTORIZADA');return p;
+}
+async function elementoEO(c,id){const e=await wixData.get(COL.ELEMENTOS,texto(id,80),OPC);if(!e)throw new Error('ELEMENTO_NO_ENCONTRADO');await playlistEO(c,e.playlistId);return e;}
+function datosEO(v){if(!v||typeof v!=='object'||Array.isArray(v))throw new Error('DATOS_INVALIDOS');return {...v};}
+export const tvdEOEjecutar=webMethod(Permissions.SiteMember,async({codigoEO,metodo,args=[]}={})=>{
+ const permitidos=['asignarPlaylistCanal','monitor','canales','parrilla','playlists','elementos','catalogo','guardarFila','reordenarFilas','cambiarActiva','eliminarFila','transmitirAhora','guardarPlaylist','eliminarPlaylist','guardarElemento','cambiarEstadoElemento','eliminarElemento','reordenarElementos'];
+ if(!permitidos.includes(metodo)||!Array.isArray(args)||args.length>3)throw new Error('METODO_NO_PERMITIDO');
+ const c=await resolverEO(codigoEO);if(!c.vigente)throw new Error('SUSCRIPCION_NO_VIGENTE');
+ const contexto=c.eo.codigoContexto;
+ if(metodo==='asignarPlaylistCanal'){
+  const canal=await canalEO(c,args[0],true);if(canal.tipo!=='VIRTUAL')throw new Error('CANAL_NO_VIRTUAL');
+  const p=await playlistEO(c,args[1]);if((await duracionPlaylistActiva(p._id))<=0)throw new Error('PLAYLIST_SIN_DURACION');
+  await wixData.update(COL.CANALES,{...canal,playlistInterna:p._id},ESCRITURA);await registrar(c.admin,'PLAYLIST_CANAL_ASIGNADA',canal.codigo,p.nombre);return {ok:true};
+ }
+ if(metodo==='monitor')return {ahora:new Date(),canales:await listarCanalesPublicos({codigoContexto:contexto})};
+ if(metodo==='canales'){
+  const all=await listarCompleto(wixData.query(COL.CANALES).ascending('orden'));
+  return {canales:all.filter(x=>x.enteOperador===contexto||(Array.isArray(x.eoCompartidas)&&x.eoCompartidas.includes(contexto))).map(x=>({codigo:x.codigo,nombre:x.nombre,tipo:x.tipo,playlistInterna:x.playlistInterna||'',activo:x.activo,soloLectura:x.enteOperador!==contexto}))};
+ }
+ if(metodo==='parrilla'){await canalEO(c,args[0]);return op_tvdParrilla(c.admin,args[0]);}
+ if(metodo==='playlists'){
+  const listas=await listarCompleto(wixData.query(COL.PLAYLISTS).eq('enteOperador',contexto).ascending('orden'));
+  return {playlists:listas.map(p=>({_id:p._id,nombre:p.nombre,descripcion:p.descripcion,activa:p.activa,repetir:p.repetir}))};
+ }
+ if(metodo==='elementos'){
+  await playlistEO(c,args[0]);const elementos=await listarCompleto(wixData.query(COL.ELEMENTOS).eq('playlistId',args[0]).ascending('orden'));
+  return {elementos:elementos.map(e=>({_id:e._id,playlistId:e.playlistId,titulo:e.titulo,descripcion:e.descripcion,referenciaVideo:e.referenciaVideo,duracionSegundos:e.duracionSegundos,activo:e.activo,orden:e.orden}))};
+ }
+ if(metodo==='catalogo'){
+  const items=await listarCompleto(wixData.query(COL.CATALOGO).eq('enteOperador',contexto));
+  return {catalogo:items.map(e=>({_id:e._id,titulo:e.nombreVideo||e.titulo,url:e.urlYoutube,duracion:e.duracion}))};
+ }
+ if(metodo==='guardarFila'){
+  const d=datosEO(args[0]);d.tipoContenido=texto(d.tipoContenido,40).toUpperCase();await canalEO(c,d.canalId,true);
+  if(d.tipoContenido==='PLAYLIST')await playlistEO(c,await resolverPlaylistId(d.contenidoId));
+  if(d.catalogoId){const cat=await wixData.get(COL.CATALOGO,texto(d.catalogoId,80),OPC);if(!cat||cat.enteOperador!==contexto)throw new Error('CATALOGO_NO_AUTORIZADO');}
+  return op_tvdGuardarFila(c.admin,d);
+ }
+ if(metodo==='reordenarFilas'||metodo==='transmitirAhora'){await canalEO(c,args[0],true);return metodo==='reordenarFilas'?op_tvdReordenarFilas(c.admin,...args):op_tvdTransmitirAhora(c.admin,...args);}
+ if(metodo==='cambiarActiva'||metodo==='eliminarFila'){
+  const fila=await wixData.get(COL.PARRILLA,texto(args[0],80),OPC);if(!fila)throw new Error('FILA_NO_ENCONTRADA');await canalEO(c,fila.canalId,true);
+  return metodo==='cambiarActiva'?op_tvdCambiarActiva(c.admin,...args):op_tvdEliminarFila(c.admin,...args);
+ }
+ if(metodo==='guardarPlaylist'){const d=datosEO(args[0]);if(d._id)await playlistEO(c,d._id);return op_tvdGuardarPlaylist(c.admin,d);}
+ if(metodo==='eliminarPlaylist'){await playlistEO(c,args[0]);return op_tvdEliminarPlaylist(c.admin,args[0]);}
+ if(metodo==='guardarElemento'){
+  const d=datosEO(args[0]);await playlistEO(c,d.playlistId);if(d._id)await elementoEO(c,d._id);
+  return op_tvdGuardarElemento(c.admin,d);
+ }
+ if(metodo==='reordenarElementos'){await playlistEO(c,args[0]);return op_tvdReordenarElementos(c.admin,...args);}
+ await elementoEO(c,args[0]);return metodo==='cambiarEstadoElemento'?op_tvdCambiarEstadoElemento(c.admin,...args):op_tvdEliminarElemento(c.admin,...args);
+});
