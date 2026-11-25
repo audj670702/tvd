@@ -1,4 +1,4 @@
-# TV Digital · App HUB / EO · v0.3.4
+# TV Digital · App HUB / EO · v0.3.5
 
 La app usa el modelo visual y las pantallas de CFCX: cabecera, tipografías, monitor, revista de Inicio, portadas/hemeroteca, Videoteca, Arcade, Mi app, temas y navegación inferior. `css/app.css` es una copia exacta del original. Las adaptaciones se concentran en identidad, fuentes públicas por contexto y el componente de dirección HUB/EO.
 
@@ -72,3 +72,7 @@ Usa `https://www.scad.mx/_functions/cfcxRevista` sin parámetros de empresa. Con
 ## Panel de empresa
 
 Entrega `wix/panel-eo/INSTALACION.md`: página Panel_TVD_EO, HTML/Velo v0.2.0 y backend existente v2.6.0. Resuelve ADM y empresa con SYS, exige vigencia SYS en cada operación y restringe recursos por contexto. Esta entrega reemplaza backend v2.5.0, mantiene los métodos globales y no modifica la app pública. Recursos heredados sin propietario requieren clasificación antes de editar desde una EO.
+
+## Versión 0.3.5
+
+En Inicio del HUB, «Adquiere tu canal» aparece a la izquierda de «Canales insignia», enlaza a la página comercial configurada en `TVD_CONFIG.portalUrl` y abre una pestaña nueva. No aparece en el contexto EO. Se actualiza la versión y la caché de la PWA; monitor y backend sin cambios.
