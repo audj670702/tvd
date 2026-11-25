@@ -1,32 +1,36 @@
-# TVD · conexión Pricing v1.0.0
+# TVD · integración comercial normalizada SYS
 
-Plan TV Digital: `983d6ede-7678-4ac7-a367-1046de1308a6`.
+Esta entrega sustituye y descarta la implementación independiente anterior.
 
-## Instalación
+## Instalar en Wix
 
-1. Crear `backend/tvdSuscripcion.web.js` con el archivo `tvdSuscripcion_web_v1.0.0.txt` completo.
-2. Sustituir el código de página TV_Digital con `TV_Digital_Velo_v2.4.0.txt` completo.
-3. Sustituir el HTML de `htmlGestionCanales` con `TVD_GestionCanales_HTML_v0.5.0.txt` completo.
-4. Publicar Wix y actualizar `/panel-tvdigital`.
+1. Sustituir `backend/tvdPanel.web.js` con `tvdPanel_web_v2.5.0_SYS.txt` completo.
+2. Sustituir código de página TV_Digital con `TV_Digital_Velo_v2.4.1_SYS.txt` completo.
+3. Sustituir HTML de `htmlGestionCanales` con `TVD_GestionCanales_HTML_v0.5.1_SYS.txt` completo.
+4. Publicar y actualizar `/panel-tvdigital`.
 
-Dependencias ya utilizadas por GYM: `@wix/pricing-plans`, `@wix/essentials`; confirmar su disponibilidad en el editor si marca un import faltante.
+No crear backends. Se consumen los existentes `backend/sysComercial.js` y `backend/sysComercialCore.js`; no se reemplazan ni modifican. Referencia revisada: scad-sys, sysComercial v1.0 y sysComercialCore v1.5.
 
-La colección `TVD_Suscripciones` ya se creó en el sitio SCaD con permisos ADMIN para lectura, inserción, edición y eliminación. No contiene compras de prueba. Los campos son app, enteOperador, codigoEO, planId, buyerMemberId, vinculadoPor (texto), fechaVinculo (fecha/hora). Su `_id` es el ID de la orden, para impedir reutilizar una compra en distintas EO incluso con solicitudes simultáneas.
+Si instalaste la entrega descartada, el nuevo Velo elimina su importación: `tvdSuscripcion.web.js` deja de utilizarse y puede retirarse tras publicar. La colección TVD_Suscripciones, creada anteriormente, no participa en el modelo normalizado. No se borra ni se migra automáticamente.
 
-## Comportamiento
+## Configuración
 
-La sección Suscripción · TV Digital aparece sobre Gestión de canales y muestra cada empresa activa. Obtiene al pagador desde `SCaD_EO.admPrincipal` → `SCaD_USR.memberId`, cotejando APP, pertenencia y actividad. No acepta un comprador libre enviado por el navegador.
+En el backend existente TVD se instancia `comercial({APP:'TVD',PLANES:[{id:'983d6ede-7678-4ac7-a367-1046de1308a6',nivel:'BASICO'}],NIVELES:['BASICO']})`.
 
-Consulta Wix en backend como GYM, con elevación, por ID de plan y comprador, recorriendo todas las páginas. Vuelve a cotejar comprador y plan en la respuesta. Una compra pagada y activa aparece disponible para vincular a una EO. El administrador selecciona explícitamente la empresa mediante su botón Vincular compra; no se asigna a todas las empresas del comprador. Solo pueden hacerlo los administradores ya autorizados del Panel TVD (`QTD_Administradores`).
+No se inventan límites: no se declara LIMITES_NIVEL ni se llama al registro automático de EO. Los límites actuales de las EO permanecen bajo SYS. BASICO identifica el único nivel del plan actual, sin añadir cuotas o prestaciones.
 
-Vigente significa ACTIVE + PAID y fechas válidas dentro del periodo. Pausa, fin, cancelación efectiva, pagos pendientes/fallidos/reembolsados y fechas inválidas no se presentan como vigentes. Cancelar renovación mantiene el periodo válido; no se crea ningún cobro. NOT_APPLICABLE no activa este plan de pago en esta versión: los planes gratuitos/pruebas requieren política explícita posterior.
+## Fuente única
 
-La consulta se repite al actualizar el catálogo; no guarda estados financieros que se vuelvan obsoletos. Un fallo del proveedor muestra No se pudo verificar; no se transforma en Sin suscripción. Los enlaces históricos se conservan.
+La sección Suscripción · TV Digital presenta el resultado de `COMERCIAL_TVD.vigenciaEO(eo)`. SYS resuelve admPrincipal → SCaD_USR → memberId y consulta el plan de la APP, sincronizando activoPricing y ultimaVerificacionAcceso con su caché existente. No se asigna una orden manualmente ni se utiliza una colección TVD de pagos. No se usan accesoPricing/pricingPlanIds de EO: son política de acceso de usuarios, no contratación comercial de la empresa.
 
-## Alcance de esta entrega
+No hay checkout, cobros ni cambios de órdenes desde esta entrega. No se adopta la regla anterior de una compra reservada a una sola empresa: se respeta exactamente la política comercial del titular vigente en SYS. Cualquier cambio a esa política debe hacerse en el núcleo común.
 
-Conecta consulta y vínculo verificable, sin checkout nuevo ni modificación de cargos, órdenes, estados de EO, usuarios o canales. El plan no tenía compras al revisar esta entrega; la comprobación real de vinculación requiere una compra genuina del responsable principal.
+El catálogo de canales sigue cargando si la consulta comercial falla; no se expone información de suscripciones a visitantes. La consulta usa la autorización administrativa existente QTD_Administradores. Los datos de canal, secretos, playlists y salidas conservan los métodos existentes.
 
-El panel actual opera mediante autorización global; esta entrega no convierte esa autorización en permisos por canal ni activa bloqueos automáticos por impago. Esa aplicación de vigencia requiere conectar la autorización de cada operación con su empresa, y decidir la política de suspensión. SYS y los administradores globales conservan el acceso de gestión. El viewer, HUB, REVISTA y las señales públicas mantienen su acceso actual. No se intervienen VPS.
+## Alcance y comprobación
 
-No requiere modificar tvdPanel.web.js, tvdNucleo.js ni http-functions.js.
+La integración muestra vigencia comercial en el panel; no añade suspensión automática ni convierte la autorización global actual del panel en autorización por EO. Esas decisiones requieren vincular cada operación con su contexto y aplicar las políticas de SYS. No altera acceso de viewers, señales VPS ni REVISTA.
+
+No se modificó el núcleo común. Se conserva su comportamiento actual: planesActivos toma órdenes ACTIVE, y en v1.5 convierte un error de Pricing en lista vacía. La integración no introduce otra regla financiera para sustituirlo; por eso no se activa suspensión automática en esta entrega. Ese manejo de error, si se ajusta, debe corregirse en SYS para todas las apps.
+
+Pruebas: 27 controles de regresión e integración TVD, más ejecución con el núcleo SYS real para plan, titular, sincronización de SCaD_USR y caché. La comprobación con suscripción real queda pendiente de instalación y de que exista una compra vigente del titular.

@@ -1,8 +1,8 @@
-// TV DIGITAL · /panel-tvdigital · Velo v2.4.0
+// TV DIGITAL · /panel-tvdigital · Velo v2.4.1
 // HTML principal: #htmlTVDPanel. Gestión: #htmlGestionCanales, #seccGestionCanales.
 import { authentication } from 'wix-members-frontend';
 import {
-  tvdAcceso, tvdListarCanales, tvdGuardarCanal, tvdParrilla,
+  tvdListarSuscripciones, tvdAcceso, tvdListarCanales, tvdGuardarCanal, tvdParrilla,
   tvdGuardarFila, tvdReordenarFilas, tvdCambiarActiva, tvdEliminarFila,
   tvdTransmitirAhora, tvdListarPlaylists, tvdListarElementos,
   tvdGuardarPlaylist, tvdEliminarPlaylist, tvdGuardarElemento,
@@ -10,12 +10,11 @@ import {
   tvdListarCatalogo, tvdListarSalidas, tvdGuardarSalida,
   tvdIniciarSalida, tvdDetenerSalida
 } from 'backend/tvdPanel.web';
-import { tvdListarSuscripciones, tvdVincularSuscripcion } from 'backend/tvdSuscripcion.web';
 let suscripciones = [];
 const HTML = '#htmlTVDPanel';
 const GC = '#htmlGestionCanales';
 const SECCION_GC = '#seccGestionCanales';
-const VERSION_GC = '0.3.0';
+const VERSION_GC = '0.4.0';
 const PERMITIDOS = {
   tvdListarCanales, tvdGuardarCanal, tvdParrilla,
   tvdGuardarFila, tvdReordenarFilas, tvdCambiarActiva, tvdEliminarFila,
@@ -48,7 +47,7 @@ async function consultarGestionCanales() {
   consulta.promesa = (async () => {
     try {
       const resultado = await tvdListarCanales({gestionEO:true});
-      try { const comercial=await tvdListarSuscripciones();suscripciones=comercial.suscripciones||[]; } catch (_) { suscripciones=[{nombre:'Suscripciones',estado:'ERROR_VERIFICACION',comprasDisponibles:[]}]; }
+      try { const comercial=await tvdListarSuscripciones();suscripciones=comercial.suscripciones||[]; } catch (_) { suscripciones=[{nombre:'Suscripciones',estado:'ERROR_VERIFICACION'}]; }
       if (!autorizado || revision !== revisionAcceso) return;
       if (!Array.isArray(resultado?.canales)) throw new Error('BACKEND_SIN_CANALES');
       if (!Array.isArray(resultado?.eos)) throw new Error('BACKEND_SIN_EO_VERIFICAR_PUBLICACION');
@@ -135,12 +134,6 @@ $w.onReady(function () {
       $w(GC).postMessage(estadoGC);
       if (autorizado) await consultarGestionCanales();
       return;
-    }
-    if(mensaje.tipo==='TVD_GC_VINCULAR_SUSCRIPCION' && autorizado && !guardandoGC){
-      guardandoGC=true;const previo=estadoGC;enviarGC('GUARDANDO','Vinculando suscripción…',previo.canales,previo.eos);
-      try{await tvdVincularSuscripcion({codigoEO:mensaje.codigoEO,orderId:mensaje.orderId});await consultarGestionCanales();}
-      catch(error){enviarGC('ERROR',String(error?.message||error),previo.canales,previo.eos);}
-      finally{guardandoGC=false;}return;
     }
     if (mensaje.tipo === 'TVD_GC_CONSULTAR' && !guardandoGC) await consultarGestionCanales();
     if (mensaje.tipo === 'TVD_GC_GUARDAR_DISTRIBUCION') await asignarGestionCanal(mensaje);

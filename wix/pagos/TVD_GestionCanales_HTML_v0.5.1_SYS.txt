@@ -14,11 +14,11 @@ details{min-width:240px;max-width:330px;border:1px solid #ccd6e3;border-radius:6
 <div class="scroll"><table><thead><tr><th class="num">#</th><th>Canal</th><th>Nombre</th><th>Tipo</th><th>Estado</th><th>EO propietaria</th><th>Compartir con EO</th><th>TVD HUB</th><th>Canal insignia</th></tr></thead><tbody id="filas"></tbody></table></div>
 <div id="suscripciones" aria-label="Suscripciones TV Digital"></div>
 <p class="ayuda">Los cambios se guardan automáticamente. Compartir conserva una sola señal y programación. Para aparecer en el directorio, la EO necesita un canal insignia activo y autorizado en HUB. Solo se admite una insignia por EO propietaria.</p>
-<footer><span id="conteo">Sin datos recibidos</span><span>Gestión de canales · v0.5.0</span></footer>
+<footer><span id="conteo">Sin datos recibidos</span><span>Gestión de canales · v0.5.1</span></footer>
 </main>
 <script>
 'use strict';
-const VERSION='0.3.0';
+const VERSION='0.4.0';
 const $=id=>document.getElementById(id);
 let canales=[],eos=[],ocupado=true,conectado=false,recibido=false,intentos=0;
 const desplegados=new Set(),filtrosEO=new Map();
@@ -94,13 +94,8 @@ window.addEventListener('message',event=>{
   if(Array.isArray(m.suscripciones)){
     const zona=$('suscripciones');zona.replaceChildren();
     const titulo=document.createElement('strong');titulo.textContent='Suscripción · TV Digital';zona.append(titulo);
-    const etiquetas={VIGENTE:'Vigente',SIN_COMPRA:'Sin suscripción',POR_VINCULAR:'Compra disponible para vincular',ERROR_VERIFICACION:'No se pudo verificar',PAUSED:'Pausada',CANCELED:'Cancelada',ENDED:'Finalizada'};
-    m.suscripciones.forEach(s=>{
-      const fila=document.createElement('div');fila.style.cssText='display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:8px 0';
-      const texto=document.createElement('span');texto.textContent=(s.nombre||s.codigoEO)+' · '+(etiquetas[s.estado]||s.estado);fila.append(texto);
-      (s.comprasDisponibles||[]).forEach((o,i)=>{const b=document.createElement('button');b.type='button';b.dataset.control='suscripcion';b.disabled=['CARGANDO','GUARDANDO'].includes(m.estado);b.textContent='Vincular compra'+(s.comprasDisponibles.length>1?' '+(i+1):'');b.title=o.id;b.onclick=()=>{if(ocupado)return;ocupado=true;actualizarControles();enviar('TVD_GC_VINCULAR_SUSCRIPCION',{codigoEO:s.codigoEO,orderId:o.id});};fila.append(b);});
-      zona.append(fila);
-    });
+    const etiquetas={VIGENTE:'Vigente',SIN_VIGENCIA:'Sin vigencia',ERROR_VERIFICACION:'No se pudo verificar'};
+    m.suscripciones.forEach(s=>{const fila=document.createElement('p');fila.style.cssText='margin:8px 0';fila.textContent=(s.nombre||s.codigoEO)+' · '+(etiquetas[s.estado]||'No se pudo verificar');zona.append(fila);});
   }
   ocupado=['CARGANDO','GUARDANDO'].includes(m.estado);
   $('estado').className=m.estado==='ERROR'?'error':m.estado==='OK'?'ok':'';
