@@ -1,5 +1,5 @@
 const test=require('node:test'),assert=require('node:assert/strict'),vm=require('node:vm'),fs=require('node:fs'),path=require('node:path');
-const root=path.join(__dirname,'..'),backend=fs.readFileSync(path.join(root,'wix/pagos/tvdPanel_web_v2.5.0_SYS.txt'),'utf8');
+const root=path.join(__dirname,'..'),backend=fs.readFileSync(path.join(root,'wix/panel-eo/tvdPanel_web_v2.6.0_EO.txt'),'utf8');
 function entorno(){
  let login=true;const consultas=[],config=[];
  const eos=[{codigoEO:'EO015',nombre:'Uno',app:'TVD',activo:true},{codigoEO:'EO016',nombre:'Dos',app:'TVD',activo:true}];

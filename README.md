@@ -68,3 +68,7 @@ Versión 0.3.4: selector compacto alineado a la derecha, logotipo de la identida
 ## REVISTA compartida · v0.3.4
 
 Usa `https://www.scad.mx/_functions/cfcxRevista` sin parámetros de empresa. Conserva Inicio, carruseles, portadas, hemeroteca con búsqueda, audio y lectura completa en el blog. El respaldo `data/revista-inicial.json` es la misma instantánea aprobada de CFCX y solo se usa si falla el servicio; una lista oficial vacía se respeta. Se actualiza cada dos minutos y al volver a la app. La consulta editorial es independiente del catálogo de canales y no se borra si este falla. No modifica el proceso de creación, aprobación o publicación ni añade modo multiempresa. Requiere permitir TVD en la cabecera CORS del servicio editorial existente; ver `wix/REVISTA_ajuste_CORS.txt`. El respaldo se actualizó con las tres fichas públicas aprobadas consultadas el 24 de noviembre de 2026.
+
+## Panel de empresa
+
+Entrega `wix/panel-eo/INSTALACION.md`: página Panel_TVD_EO, HTML/Velo v0.2.0 y backend existente v2.6.0. Resuelve ADM y empresa con SYS, exige vigencia SYS en cada operación y restringe recursos por contexto. Esta entrega reemplaza backend v2.5.0, mantiene los métodos globales y no modifica la app pública. Recursos heredados sin propietario requieren clasificación antes de editar desde una EO.
