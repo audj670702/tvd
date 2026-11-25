@@ -1,6 +1,6 @@
 /* Solo la interfaz. Sin catálogos, permisos, datos EO ni contenido audiovisual. */
-const CACHE='tvd-app-v0.3.6';
-const SHELL=['./index.html','./css/app.css?v=0.3.6','./css/contexto.css?v=0.3.6','./js/config.js?v=0.3.6','./js/contexto.js?v=0.3.6','./js/store.js?v=0.3.6','./js/canales.js?v=0.3.6','./js/monitor.js?v=0.3.6','./js/install.js?v=0.3.6','./js/revista.js?v=0.3.6','./js/app.js?v=0.3.6','./manifest.webmanifest','./assets/icon.svg','./assets/icon-180.png','./assets/icon-192.png','./assets/icon-512.png'];
+const CACHE='tvd-app-v0.3.7';
+const SHELL=['./index.html','./css/app.css?v=0.3.7','./css/contexto.css?v=0.3.7','./js/config.js?v=0.3.7','./js/contexto.js?v=0.3.7','./js/store.js?v=0.3.7','./js/canales.js?v=0.3.7','./js/monitor.js?v=0.3.7','./js/install.js?v=0.3.7','./js/revista.js?v=0.3.7','./js/app.js?v=0.3.7','./manifest.webmanifest','./assets/icon.svg','./assets/icon-180.png','./assets/icon-192.png','./assets/icon-512.png'];
 self.addEventListener('install',e=>e.waitUntil(caches.open(CACHE).then(c=>c.addAll(SHELL)).then(()=>self.skipWaiting())));
 self.addEventListener('activate',e=>e.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k.startsWith('tvd-app-')&&k!==CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim())));
 self.addEventListener('fetch',e=>{

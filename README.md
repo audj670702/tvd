@@ -1,4 +1,4 @@
-# TV Digital · App HUB / EO · v0.3.5
+# TV Digital · App HUB / EO · v0.3.7
 
 La app usa el modelo visual y las pantallas de CFCX: cabecera, tipografías, monitor, revista de Inicio, portadas/hemeroteca, Videoteca, Arcade, Mi app, temas y navegación inferior. `css/app.css` es una copia exacta del original. Las adaptaciones se concentran en identidad, fuentes públicas por contexto y el componente de dirección HUB/EO.
 
@@ -76,3 +76,7 @@ Entrega `wix/panel-eo/INSTALACION.md`: página Panel_TVD_EO, HTML/Velo v0.2.0 y 
 ## Versión 0.3.5
 
 En Inicio del HUB, «Adquiere tu canal» aparece a la izquierda de «Canales insignia», enlaza a la página comercial configurada en `TVD_CONFIG.portalUrl` y abre una pestaña nueva. No aparece en el contexto EO. Se actualiza la versión y la caché de la PWA; monitor y backend sin cambios.
+
+## Versión 0.3.7
+
+Temporalmente, «Adquiere tu canal» abre la tarjeta nativa Wix Pricing del plan TV Digital mediante `TVD_CONFIG.compraUrl`. Se conserva `portalUrl` para el futuro portal comercial. No cambia el monitor ni el backend.
