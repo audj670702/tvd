@@ -1,0 +1,42 @@
+// Página Panel_TVD_EO · /panel-tvd-eo · #seccPanel y #htmlPanel · v0.2.2
+import { authentication } from 'wix-members-frontend';
+import wixLocation from 'wix-location-frontend';
+import { tvdEOAcceso, tvdEOEjecutar } from 'backend/tvdPanel.web';
+const VERSION='0.2.2';
+const METODOS=['asignarPlaylistCanal','monitor','canales','parrilla','playlists','elementos','catalogo','guardarFila','reordenarFilas','cambiarActiva','eliminarFila','transmitirAhora','guardarPlaylist','eliminarPlaylist','guardarElemento','cambiarEstadoElemento','eliminarElemento','reordenarElementos'];
+let panel,listo=false,revision=0,ocupado=false;
+let codigoEO='',ultimo={estado:'CARGANDO',mensaje:'Comprobando acceso…'};
+function enviar(datos){ultimo={...datos,sesion:authentication.loggedIn(),version:VERSION};if(listo)panel.postMessage({tipo:'TVD_EO_ESTADO',...ultimo});}
+async function resolver(codigo=codigoEO){
+ const turno=++revision;enviar({estado:'CARGANDO',mensaje:'Validando acceso…'});
+ try{const r=await tvdEOAcceso(codigo);if(turno!==revision)return;codigoEO=r.eo?.codigoEO||'';enviar(r);}
+ catch(_){if(turno===revision)enviar({estado:'ERROR',mensaje:'No se pudo validar el acceso. Intenta nuevamente.'});}
+}
+async function accion(m){
+ if(ocupado)return;ocupado=true;
+ try{
+  if(m.accion==='LOGIN'){try{await authentication.promptLogin();}catch(_){}await resolver();}
+  if(m.accion==='SALIR'){++revision;codigoEO='';enviar({estado:'CARGANDO',mensaje:'Cerrando sesión…'});await authentication.logout();enviar({estado:'NO_LOGIN',mensaje:'Sesión cerrada.'});}
+  if(m.accion==='REINTENTAR')await resolver();
+  if(m.accion==='CAMBIAR_EO')await resolver('');
+  if(m.accion==='ELEGIR_EO'&&typeof m.codigoEO==='string')await resolver(m.codigoEO);
+  if(m.accion==='MI_APP'&&codigoEO)wixLocation.to('https://tvd.scad.mx/?eo='+encodeURIComponent(codigoEO)+'#/inicio');
+ }catch(error){enviar({estado:'ERROR',mensaje:m.accion==='SALIR'?'No se pudo cerrar la sesión. Intenta nuevamente.':'No se pudo completar el acceso. Intenta nuevamente.'});}finally{ocupado=false;}
+}
+$w.onReady(function(){
+ panel=$w('#htmlPanel');codigoEO=String(wixLocation.query.codigoEO||wixLocation.query.eo||'').trim().toUpperCase();
+ panel.onMessage(async({data:m})=>{
+  if(!m||m.version!==VERSION)return;
+  if(m.tipo==='TVD_EO_LISTO'){listo=true;panel.postMessage({tipo:'TVD_EO_ESTADO',...ultimo});return;}
+  if(m.tipo==='TVD_EO_ACCION'){await accion(m);return;}
+  if(m.tipo!=='TVD_EO_CMD'||!METODOS.includes(m.metodo)||typeof m.id!=='string'||m.id.length>80)return;
+  const turno=revision,eo=codigoEO;
+  try{
+   if(ultimo.estado!=='AUTORIZADO'||!eo)throw new Error('NO_AUTORIZADO');
+   const data=await tvdEOEjecutar({codigoEO:eo,metodo:m.metodo,args:Array.isArray(m.args)?m.args:[]});
+   if(turno===revision)panel.postMessage({tipo:'TVD_EO_RESP',version:VERSION,id:m.id,ok:true,data});
+  }catch(error){if(turno===revision){panel.postMessage({tipo:'TVD_EO_RESP',version:VERSION,id:m.id,ok:false,error:String(error?.message||'ERROR')});if(['SUSCRIPCION_NO_VIGENTE','NO_AUTORIZADO_EO','NO_LOGIN'].includes(String(error?.message)))await resolver(eo);}}
+ });
+ $w('#seccPanel').expand();resolver();
+ authentication.onLogin(()=>resolver());
+});

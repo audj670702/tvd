@@ -1,11 +1,11 @@
-# Panel_TVD_EO · v0.2.1
+# Panel_TVD_EO · v0.2.2
 
 ## Instalar
 
 1. Sustituir `backend/tvdPanel.web.js` con `tvdPanel_web_v2.6.1_EO.txt` completo. No crear otro backend. Reemplaza la entrega v2.5.0 SYS.
 2. En la página Wix `Panel_TVD_EO`, establecer slug `/panel-tvd-eo`. Usar una sección `seccPanel` y un elemento Insertar HTML con ID `htmlPanel`, según la maqueta previa.
-3. Pegar `Panel_TVD_EO_HTML_v0.2.1.txt` en `htmlPanel`.
-4. Pegar `Panel_TVD_EO_Velo_v0.2.1.txt` como código de esa página.
+3. Pegar `Panel_TVD_EO_HTML_v0.2.2.txt` en `htmlPanel`.
+4. Pegar `Panel_TVD_EO_Velo_v0.2.2.txt` como código de esa página.
 5. Publicar Wix. El acceso sin parámetro resuelve una empresa automáticamente o permite elegir si hay varias. `?codigoEO=EO015` o `?eo=EO015` solicita esa empresa; no concede permiso.
 
 La interfaz requiere altura suficiente para monitor, tabla y editor. Conservar los elementos ya creados cuando sus IDs coincidan. No pegar el Velo EO en la página del panel general ni en el portal comercial.
@@ -48,3 +48,5 @@ La interfaz se verificó con DOM y respuestas aisladas. No se inició una suscri
 Corrección v0.2.1: pantalla de acceso superior con Iniciar sesión visible desde el HTML inicial; monitor y toda la operación ocultos hasta AUTORIZADO. HTML y Velo deben usar ambos protocolo 0.2.1. Tras 10 intentos sin respuesta se muestra un diagnóstico de conexión con la página.
 
 Corrección backend v2.6.1: ingresar y Revalidar llaman vigenciaEO(eo,{forzar:true}) de SYS; las operaciones conservan la caché común. No cambia la política de estados de pago ni modifica órdenes.
+
+Corrección v0.2.2: cabecera con botón de sesión explícito y permanente. Velo comunica la sesión Wix real, independientemente de vigencia o rol. Sin sesión: Iniciar sesión. Con sesión: Cerrar sesión, incluso durante validación, sin plan, denegado o con error. El cierre limpia el panel inmediatamente; si Wix falla al salir, se informa y se mantiene disponible Cerrar sesión. Nueva tarjeta de entrada sobria, sin aviso amarillo. HTML y Velo se actualizan juntos; backend permanece v2.6.1.
