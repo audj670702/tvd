@@ -26,6 +26,10 @@
     });
   }
 
+  function textoFiltro(s) {
+    return String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, '');
+  }
+
   function indiceDeNumero(canales, numero) {
     for (var i = 0; i < canales.length; i++) {
       if (canales[i].numero === numero) return i;
@@ -92,6 +96,7 @@
       ? '<div class="tv-options" data-role="options" role="dialog" aria-label="Elegir canal" hidden>' +
           '<div class="tv-options-head"><strong>Canales</strong>' +
             '<button type="button" class="tv-options-close" data-act="close-menu" aria-label="Cerrar menú">' + ICON.close + '</button></div>' +
+          '<input type="search" class="tv-channel-search" data-role="channel-search" placeholder="Buscar canal…" aria-label="Buscar por código o nombre" autocomplete="off">' +
           '<div class="tv-options-list" data-role="channel-list"></div>' +
           '<p class="tv-options-foot" data-role="menu-foot"></p>' +
         '</div>'
@@ -135,6 +140,7 @@
       sound: this.root.querySelector('[data-act="sound"]'),
       menu: this.root.querySelector('[data-role="options"]'),
       menuTrigger: this.root.querySelector('[data-act="channels"]'),
+      channelSearch: this.root.querySelector('[data-role="channel-search"]'),
       channelList: this.root.querySelector('[data-role="channel-list"]'),
       menuFoot: this.root.querySelector('[data-role="menu-foot"]'),
       status: this.root.querySelector('[data-role="status"]'),
@@ -165,6 +171,7 @@
       }
     };
     this.root.addEventListener('click', this.onClick);
+    if (this.el.channelSearch) this.el.channelSearch.addEventListener('input', function () { self.pintarMenu(); });
     this.onDocumentPointer = function (event) {
       if (self.el.menu && !self.el.menu.hidden && !self.el.console.contains(event.target)) self.cerrarMenu();
     };
@@ -182,11 +189,16 @@
     if (!this.el.channelList) return;
     var self = this;
     var pref = this.preferido();
+    var filtro = textoFiltro(this.el.channelSearch && this.el.channelSearch.value);
     this.el.channelList.innerHTML = this.canales.map(function (c, i) {
+      if (filtro && textoFiltro(c.codigo + ' ' + c.numero + ' ' + c.nombre).indexOf(filtro) === -1) return '';
+      var logo = typeof c.logo === 'string' && /^https:\/\//i.test(c.logo) ? c.logo : '';
       var fijado = pref === c.codigo;
       return '<div class="tv-channel-row">' +
         '<button type="button" class="tv-channel-option' + (i === self.idx ? ' is-active' : '') +
         '" data-ch="' + i + '" aria-pressed="' + (i === self.idx) + '">' +
+        '<span class="tv-option-logo" aria-hidden="true">' + ICON.channels +
+        (logo ? '<img alt="" loading="lazy" src="' + esc(logo) + '">' : '') + '</span>' +
         '<span class="tv-option-code">CH ' + esc(c.numero) + '</span>' +
         '<span class="tv-option-name">' + esc(c.nombre) + '</span>' +
         '<span class="tv-option-check" aria-hidden="true">' + (i === self.idx ? '✓' : '') + '</span>' +
@@ -196,7 +208,12 @@
         (fijado ? 'Quitar CH ' + esc(c.numero) + ' como predeterminado' : 'Fijar CH ' + esc(c.numero) + ' como predeterminado') +
         '" title="' + (fijado ? 'Quitar predeterminado' : 'Fijar como predeterminado') + '">★</button>' +
         '</div>';
-    }).join('') || '<p class="tv-options-empty">Sin canales disponibles</p>';
+    }).join('') || '<p class="tv-options-empty">' + (filtro ? 'No se encontraron canales' : 'Sin canales disponibles') + '</p>';
+    this.el.channelList.querySelectorAll('.tv-option-logo img').forEach(function (img) {
+      function fallo() { img.remove(); }
+      img.addEventListener('error', fallo, { once: true });
+      if (img.complete && !img.naturalWidth) fallo();
+    });
     if (this.el.menuFoot) {
       var fijo = this.canales.filter(function (c) { return c.codigo === pref; })[0];
       this.el.menuFoot.textContent = fijo
@@ -224,7 +241,10 @@
     var abrir = this.el.menu.hidden;
     this.el.menu.hidden = !abrir;
     if (this.el.menuTrigger) this.el.menuTrigger.setAttribute('aria-expanded', String(abrir));
-    if (abrir) this.pintarMenu();
+    if (abrir) {
+      if (this.el.channelSearch) this.el.channelSearch.value = '';
+      this.pintarMenu();
+    }
   };
 
   Monitor.prototype.cerrarMenu = function () {
