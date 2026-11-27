@@ -231,6 +231,15 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
   width: 44px; height: 44px; display: grid; place-items: center;
   border: 0; background: #eef3fa; border-radius: 8px; color: #132b4d;
 }
+.tv-channel-search {
+  display:block; width:100%; box-sizing:border-box; min-height:36px;
+  margin:0 0 8px; padding:7px 10px; border:1px solid #dce5ef;
+  border-radius:8px; background:#eef3fa; color:#132b4d; font:inherit; font-size:14px;
+}
+.tv-channel-search:focus { outline:2px solid #527ca8; outline-offset:1px; }
+.tv-option-logo { position:relative; flex:0 0 32px; width:32px; height:32px; display:grid; place-items:center; background:#fff; color:#62748a; border-radius:6px; overflow:hidden; }
+.tv-option-logo svg { width:20px; height:20px; fill:none; stroke:currentColor; stroke-width:1.5; }
+.tv-option-logo img { position:absolute; inset:0; width:100%; height:100%; object-fit:contain; background:#fff; }
 .tv-options-list { display: grid; gap: 4px; max-height: 300px; overflow-y: auto; }
 .tv-channel-option {
   width: 100%; min-height: 44px; padding: 8px 10px; border: 0;
