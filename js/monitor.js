@@ -333,7 +333,7 @@
 
     if (c.tipo === 'hls') this.montarHls(c);
     else if (c.tipo === 'youtube' && c.programa) this.montarPrograma(c);
-    else if (c.tipo === 'youtube') this.montarYoutube(c);
+    else if (c.tipo === 'youtube') this.mensaje('Programación no disponible', 'Esperando programación sincronizada');
     else this.mensaje('Canal en preparación', 'Contenido aún no disponible.');
 
   };
