@@ -576,10 +576,10 @@
       errorCanales=contextoError || 'No se pudieron cargar los canales. Vuelve a intentar en un momento.';
       console.warn('TVD · consulta pública',error.message);
     } finally {consultaEnCurso=false;}
-    if (monitorActual && nuevo && (location.hash === '#/inicio' || !location.hash)) {
+    if (monitorActual && monitorActual.canales.length && nuevo && (location.hash === '#/inicio' || !location.hash)) {
       monitorActual.actualizarCanales(DATA.canales);
       pintarIdentidad();
-      pintarSelectorEO();
+      if(document.getElementById('buscarCanalEO')) pintarSelectorEO();
       actualizarLeyendaCanales();
     } else if(anterior!==JSON.stringify(DATA)){router();}else actualizarLeyendaCanales();
   }
