@@ -314,6 +314,7 @@
     var c = this.canales[i];
     if (!c) return;
     this.idx = i;
+    this._ultimoAjusteReloj = 0;
     this.cerrarMenu();
     this.limpiarMedia();
     this.estado('', '');
@@ -542,6 +543,22 @@
         if (d && d.event === 'infoDelivery' && d.info) {
           if (typeof d.info.playerState === 'number') self.notificarAudiencia(d.info.playerState === 1);
           if (d.info.playerState === 1) {
+            var canal = self.canales[self.idx], p = canal && canal.programa;
+            if (p && Number.isFinite(d.info.currentTime) && Date.now() - (self._ultimoAjusteReloj || 0) > 5000) {
+              var total = p.videos.reduce(function (t, v) { return t + v.duracion; }, 0);
+              var pos = ((Math.floor((Date.now() + p.desfase - p.origen) / 1000) % total) + total) % total;
+              var i = 0;
+              while (pos >= p.videos[i].duracion) { pos -= p.videos[i].duracion; i++; }
+              var id = d.info.videoData && d.info.videoData.video_id;
+              if (id && id !== p.videos[i].id) {
+                self._ultimoAjusteReloj = Date.now();
+                clearTimeout(self._programaT);
+                self.avanzarPrograma(canal);
+              } else if (id === p.videos[i].id && Math.abs(d.info.currentTime - pos) > 4) {
+                self._ultimoAjusteReloj = Date.now();
+                try { m.contentWindow.postMessage(JSON.stringify({event:'command',func:'seekTo',args:[pos,true]}),'https://www.youtube.com'); } catch (e) {}
+              }
+            }
             self._sonando = true;
             if (self.el.resume) self.el.resume.hidden = true;
           }
