@@ -1,0 +1,3 @@
+// Añadido a backend/http-functions.js; conserva el resto del archivo.
+export function options_tvdAudiencia(request) { return tvdPublico.options_tvdAudiencia(request); }
+export function post_tvdAudiencia(request) { return tvdPublico.post_tvdAudiencia(request); }

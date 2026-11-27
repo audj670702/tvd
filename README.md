@@ -80,3 +80,11 @@ En Inicio del HUB, «Adquiere tu canal» aparece a la izquierda de «Canales ins
 ## Versión 0.3.7
 
 Temporalmente, «Adquiere tu canal» abre la tarjeta nativa Wix Pricing del plan TV Digital mediante `TVD_CONFIG.compraUrl`. Se conserva `portalUrl` para el futuro portal comercial. No cambia el monitor ni el backend.
+
+## Audiencia · v0.4.0
+
+La app envía sesiones anónimas a `/_functions/tvdAudiencia` únicamente cuando el monitor confirma reproducción HLS o YouTube. Usa un identificador aleatorio por navegador/contexto/día; no envía nombres, correo, IP ni perfiles Wix. Las pausas, buffering, errores y pestañas ocultas no acumulan tiempo. Cambiar de canal cierra la sesión anterior; cambiar de video dentro del mismo canal conserva la reproducción.
+
+El servidor valida el contexto público EO/HUB, la disponibilidad comercial y el canal. Las señales se envían cada 30 segundos; una sesión sin señal durante 90 segundos deja de contar como activa. Los acumulados repetidos no suman tiempo dos veces y el incremento se limita al tiempo transcurrido en el servidor. El CMS privado `TVD_AudienciaSesiones` conserva una fila por reproducción. Solo el Panel EO autenticado y vigente consulta su empresa; devuelve datos agregados, nunca identificadores de visitantes. El resumen muestra espectadores simultáneos y reproducciones/tiempo de los últimos 30 días, con actualización cada 30 segundos. El monitor administrativo no instrumenta audiencia pública.
+
+La conexión Wix mantiene `tvdPublico.js`, `tvdPanel.web.js` y `http-functions.js` existentes. El fragmento de puente de audiencia está en `wix/audiencia/http-functions.txt`; no sustituye el archivo HTTP compartido. La medición empieza desde la publicación, sin reconstruir audiencia histórica.

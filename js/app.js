@@ -15,6 +15,8 @@
   var view = document.getElementById('view');
   var DATA = {canales:[],espacios:[],programas:[],cupones:[],articulos:[]};
   var errorCanales='', consultaEnCurso=false;
+  var audiencia = window.TVD_AUDIENCIA && !contextoError ? new window.TVD_AUDIENCIA({ url: CFG.audienciaUrl, contexto: contexto }) : null;
+  function audienciaDelMonitor(evento) { if (audiencia) audiencia.actualizar(evento); }
   var monitorActual = null;
   var origenCanales = '';
   var limpieza = []; // funciones a ejecutar al salir de una pantalla
@@ -280,7 +282,7 @@
       limpieza.push(function(){clearInterval(timerInicio);});
     }
     var mon = new window.CFCXMonitor(document.getElementById('monitor'), {
-      canales: DATA.canales, mostrarCanales: true, inicial:canalInicial()
+      onAudiencia: audienciaDelMonitor, canales: DATA.canales, mostrarCanales: true, inicial:canalInicial()
     });
     monitorActual = mon;
     limpieza.push(function () { if (monitorActual === mon) monitorActual = null; mon.destroy(); });
@@ -335,7 +337,7 @@
         '<button type="button" class="btn ghost block" style="margin-top:12px" id="comparte">Comparte con TVD</button></div></section>';
 
     var mon = new window.CFCXMonitor(document.getElementById('monitor'), {
-      canales: canalEspacio ? DATA.canales : [], inicial: canalEspacio ? canalEspacio.numero : '', mostrarCanales: false
+      onAudiencia: audienciaDelMonitor, canales: canalEspacio ? DATA.canales : [], inicial: canalEspacio ? canalEspacio.numero : '', mostrarCanales: false
     });
     monitorActual = mon;
     limpieza.push(function () { if (monitorActual === mon) monitorActual = null; mon.destroy(); });

@@ -1,0 +1,145 @@
+// TV DIGITAL · backend/tvdPublico.js · v2.5.0
+// v2.4.1: filtro comercial reversible para la oferta pública.
+// EO: ?codigoEO=EO013&app=TVD. HUB: ?hub=1. Sin parámetros conserva CFCX.
+import wixData from 'wix-data';
+import { ok, serverError, badRequest, forbidden } from 'wix-http-functions';
+import { construirTransmision, construirPrecarga, listarCanalesPublicos, normalizarCodigo, registrarAlAireVps, resolverEOAppPublica, listarDirectorioEOPublico } from 'backend/tvdNucleo';
+import { salidasParaVps, registrarEstadoVps } from 'backend/tvdSalidas';
+import { tvdFiltrarOfertaPublica } from 'backend/tvdComercial';
+const TVD_HEADERS = {
+  'Content-Type':'application/json; charset=utf-8',
+  'Access-Control-Allow-Origin':'*',
+  'Access-Control-Allow-Methods':'GET, OPTIONS',
+  'Access-Control-Allow-Headers':'Content-Type',
+  'Cache-Control':'no-store'
+};
+function canalDeSolicitud(request) { const consulta=request?.query || {};return normalizarCodigo(consulta.canal || 'CH01'); }
+export function options_tvdTransmision() { return ok({headers:TVD_HEADERS,body:{ok:true}}); }
+export async function get_tvdTransmision(request) {
+  try { const cuerpo=await construirTransmision(canalDeSolicitud(request));return ok({headers:TVD_HEADERS,body:cuerpo}); }
+  catch(error) {
+    console.error('TVD / tvdTransmision error:',error);
+    return serverError({headers:TVD_HEADERS,body:{ok:false,codigo:'ERROR_TVD_TRANSMISION',mensaje:error?.message || 'No fue posible obtener la transmisión.',transmision:null,playlist:null,elementos:[]}});
+  }
+}
+export function options_tvdCanales() { return ok({headers:TVD_HEADERS,body:{ok:true}}); }
+export async function get_tvdCanales(request) {
+  try {
+    const query=request?.query || {};
+    const codigo=typeof query.codigoEO === 'string' ? query.codigoEO.trim() : '';
+    const hub=query.hub === '1';
+    if (query.hub !== undefined && !hub) throw new Error('CONTEXTO_INVALIDO');
+    if (query.app !== undefined && query.app !== 'TVD') throw new Error('APP_INVALIDA');
+    if (hub && (query.codigoEO !== undefined || query.app !== undefined)) throw new Error('CONTEXTO_AMBIGUO');
+    if (query.codigoEO !== undefined || query.app !== undefined) {
+      if (!codigo) throw new Error('EO_REQUERIDA');
+      const identidad=await resolverEOAppPublica(codigo);
+      const canales=await listarCanalesPublicos({codigoContexto:identidad.contexto.codigoContexto});
+      const oferta=await tvdFiltrarOfertaPublica({canales,codigoContexto:identidad.contexto.codigoContexto});
+      return ok({headers:TVD_HEADERS,body:{ok:true,ahora:new Date(),...identidad,canales:oferta.canales,suspendidaComercial:oferta.suspendidaComercial}});
+    }
+    const canales=await listarCanalesPublicos(hub ? {hub:true} : {});
+    const directorioEO=hub ? await listarDirectorioEOPublico() : null;
+    const oferta=await tvdFiltrarOfertaPublica({canales,directorioEO});
+    return ok({headers:TVD_HEADERS,body:{ok:true,ahora:new Date(),...(hub ? {contexto:{app:'TVD',tipo:'HUB'},directorioEO:oferta.directorioEO} : {}),canales:oferta.canales}});
+  } catch(error) {
+    console.error('TVD / tvdCanales error:',error);
+    return serverError({headers:TVD_HEADERS,body:{ok:false,codigo:'ERROR_TVD_CANALES',canales:[]}});
+  }
+}
+export function options_tvdPrecarga() { return ok({headers:TVD_HEADERS,body:{ok:true}}); }
+export async function get_tvdPrecarga(request) {
+  try { const cuerpo=await construirPrecarga(canalDeSolicitud(request));return ok({headers:TVD_HEADERS,body:cuerpo}); }
+  catch(error) { console.error('TVD / tvdPrecarga error:',error);return serverError({headers:TVD_HEADERS,body:{ok:false,codigo:'ERROR_TVD_PRECARGA',videos:[]}}); }
+}
+const TVD_HEADERS_POST={...TVD_HEADERS,'Access-Control-Allow-Methods':'POST, OPTIONS','Access-Control-Allow-Headers':'Content-Type, X-TVD-Token'};
+export function options_tvdAlAire() { return ok({headers:TVD_HEADERS_POST,body:{ok:true}}); }
+export async function post_tvdAlAire(request) {
+  try {
+    const cabeceras=request?.headers || {};
+    const token=cabeceras['x-tvd-token'] || cabeceras['X-TVD-Token'] || '';
+    let datos={};try { datos=await request.body.json(); } catch(_) { datos={}; }
+    const r=await registrarAlAireVps(canalDeSolicitud(request),token,datos);
+    return ok({headers:TVD_HEADERS_POST,body:r});
+  } catch(error) { console.error('TVD / tvdAlAire error:',error);return serverError({headers:TVD_HEADERS_POST,body:{ok:false,codigo:'ERROR_TVD_ALAIRE'}}); }
+}
+function tokenDe(request) { const c=request?.headers || {};return c['x-tvd-token'] || c['X-TVD-Token'] || ''; }
+export function options_tvdSalidas() { return ok({headers:TVD_HEADERS_POST,body:{ok:true}}); }
+export async function get_tvdSalidas(request) {
+  try { return ok({headers:TVD_HEADERS_POST,body:await salidasParaVps(tokenDe(request))}); }
+  catch(error) { console.error('TVD / tvdSalidas error:',error);return serverError({headers:TVD_HEADERS_POST,body:{ok:false,codigo:'ERROR_TVD_SALIDAS',salidas:[]}}); }
+}
+export function options_tvdSalidaEstado() { return ok({headers:TVD_HEADERS_POST,body:{ok:true}}); }
+export async function post_tvdSalidaEstado(request) {
+  try {
+    let datos={};try { datos=await request.body.json(); } catch(_) { datos={}; }
+    return ok({headers:TVD_HEADERS_POST,body:await registrarEstadoVps(tokenDe(request),datos)});
+  } catch(error) { console.error('TVD / tvdSalidaEstado error:',error);return serverError({headers:TVD_HEADERS_POST,body:{ok:false,codigo:'ERROR_TVD_SALIDA_ESTADO'}}); }
+}
+
+
+// Audiencia TVD · sesiones anónimas; lectura de estadísticas exclusiva del panel autorizado.
+const AUD_COL='TVD_AudienciaSesiones';
+const AUD_OPC={suppressAuth:true,consistentRead:true};
+const AUD_ORIGENES=new Set(['https://tvd.scad.mx','https://www.scad.mx','https://scad.mx']);
+const AUD_UUID=/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
+const audContextos=new Map(),audColas=new Map();
+function cabecerasAudiencia(request){
+ const origin=request?.headers?.origin||request?.headers?.Origin||'';
+ if(!AUD_ORIGENES.has(origin))throw new Error('ORIGEN_NO_PERMITIDO');
+ return {'Content-Type':'application/json; charset=utf-8','Access-Control-Allow-Origin':origin,'Access-Control-Allow-Methods':'POST, OPTIONS','Access-Control-Allow-Headers':'Content-Type','Cache-Control':'no-store','Vary':'Origin'};
+}
+async function contextoAudiencia(d){
+ if(d.app!=='TVD'||(d.hub===true&&d.codigoEO))throw new Error('CONTEXTO_INVALIDO');
+ const eo=typeof d.codigoEO==='string'?d.codigoEO:'';
+ if(d.hub!==true&&!/^EO\d{3,}(?:-TVD-[A-Za-z0-9_-]+)?$/.test(eo))throw new Error('EO_REQUERIDA');
+ const canal=normalizarCodigo(d.canalId);
+ if(!/^CH\d{2,}$/.test(canal))throw new Error('CANAL_INVALIDO');
+ const clave=(d.hub===true?'HUB':eo)+'|'+canal,guardado=audContextos.get(clave);
+ if(guardado&&Date.now()-guardado.fecha<60000)return guardado.valor;
+ const identidad=d.hub===true?null:await resolverEOAppPublica(eo);
+ const canales=await listarCanalesPublicos(identidad?{codigoContexto:identidad.contexto.codigoContexto}:{hub:true});
+ const oferta=await tvdFiltrarOfertaPublica({canales,...(identidad?{codigoContexto:identidad.contexto.codigoContexto}:{})});
+ if(!oferta.canales.some(c=>c.codigo===canal))throw new Error('CANAL_NO_AUTORIZADO');
+ const valor={codigoEO:identidad?.contexto.codigoEO||'HUB',codigoContexto:identidad?.contexto.codigoContexto||'HUB',canalId:canal};
+ if(audContextos.size>500)audContextos.clear();audContextos.set(clave,{fecha:Date.now(),valor});return valor;
+}
+async function registrarSesionAudiencia(d){
+ if(!AUD_UUID.test(d.sessionId||'')||!AUD_UUID.test(d.viewerId||'')||!Number.isSafeInteger(d.segundos)||d.segundos<0||typeof d.activa!=='boolean'||typeof d.finalizada!=='boolean')throw new Error('DATOS_INVALIDOS');
+ const contexto=await contextoAudiencia(d),ahora=new Date();
+ const q=await wixData.query(AUD_COL).eq('_id',d.sessionId).limit(1).find(AUD_OPC);
+ const actual=q.items[0];
+ if(!actual){
+  // Un inicio real siempre envía cero; se tolera que el primer mensaje se pierda sin sumar tiempo no observado.
+  const fila={_id:d.sessionId,...contexto,viewerId:d.viewerId,iniciadaEn:ahora,ultimoEn:ahora,segundos:0,acumuladoCliente:d.segundos,activa:d.activa&&!d.finalizada,finalizada:d.finalizada};
+  await wixData.insert(AUD_COL,fila,{suppressAuth:true});return {ok:true};
+ }
+ if(actual.codigoEO!==contexto.codigoEO||actual.canalId!==contexto.canalId||actual.viewerId!==d.viewerId)throw new Error('SESION_NO_AUTORIZADA');
+ if(actual.finalizada===true||d.segundos<Number(actual.acumuladoCliente||0))return {ok:true};
+ const transcurrido=Math.max(0,(ahora-new Date(actual.ultimoEn))/1000);
+ const incremento=Math.min(60,Math.max(0,d.segundos-Number(actual.acumuladoCliente||0)),Math.floor(transcurrido+1));
+ await wixData.update(AUD_COL,{...actual,ultimoEn:ahora,segundos:Number(actual.segundos||0)+incremento,acumuladoCliente:d.segundos,activa:d.activa&&!d.finalizada,finalizada:d.finalizada},{suppressAuth:true});
+ return {ok:true};
+}
+export function options_tvdAudiencia(request){try{return ok({headers:cabecerasAudiencia(request),body:{ok:true}});}catch(_){return forbidden({body:{ok:false}});}}
+export async function post_tvdAudiencia(request){
+ let headers;try{headers=cabecerasAudiencia(request);}catch(_){return forbidden({body:{ok:false}});}
+ try{
+  const raw=await request.body.text();if(raw.length>2048)return badRequest({headers,body:{ok:false}});
+  const d=JSON.parse(raw);const id=String(d.sessionId||'');
+  const anterior=audColas.get(id)||Promise.resolve();
+  const tarea=anterior.catch(()=>{}).then(()=>registrarSesionAudiencia(d));audColas.set(id,tarea);
+  try{return ok({headers,body:await tarea});}finally{if(audColas.get(id)===tarea)audColas.delete(id);}
+ }catch(error){console.warn('TVD audiencia',error?.message);return badRequest({headers,body:{ok:false,codigo:'AUDIENCIA_NO_REGISTRADA'}});}
+}
+export async function tvdResumenAudienciaEO(codigoEO){
+ if(!/^EO\d{3,}$/.test(codigoEO))throw new Error('EO_REQUERIDA');
+ const ahora=new Date(),desde=new Date(ahora.getTime()-30*86400000),vigente=new Date(ahora.getTime()-90000);
+ const filtro=wixData.filter().eq('codigoEO',codigoEO).ge('iniciadaEn',desde);
+ const r=await wixData.aggregate(AUD_COL).filter(filtro).group('canalId').count().sum('segundos','tiempoSegundos').limit(1000).run(AUD_OPC);
+ let pagina=await wixData.query(AUD_COL).eq('codigoEO',codigoEO).eq('activa',true).ge('ultimoEn',vigente).limit(1000).find(AUD_OPC);
+ const espectadores=new Set(),porCanal=new Map();
+ while(true){for(const s of pagina.items){espectadores.add(s.viewerId);if(!porCanal.has(s.canalId))porCanal.set(s.canalId,new Set());porCanal.get(s.canalId).add(s.viewerId);}if(!pagina.hasNext())break;pagina=await pagina.next();}
+ const canales=r.items.map(x=>({canalId:x._id,simultaneos:porCanal.get(x._id)?.size||0,reproducciones:Number(x.count)||0,segundos:Number(x.tiempoSegundos)||0}));
+ return {ahora,desde,dias:30,simultaneos:espectadores.size,reproducciones:canales.reduce((n,c)=>n+c.reproducciones,0),segundos:canales.reduce((n,c)=>n+c.segundos,0),canales};
+}

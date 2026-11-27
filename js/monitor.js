@@ -63,6 +63,7 @@
    *   mostrarCanales: muestra el selector de canales
    */
   function Monitor(root, opts) {
+    this.onAudiencia = typeof opts.onAudiencia === 'function' ? opts.onAudiencia : null;
     this.root = root;
     this.canales = opts.canales || [];
     this.mostrarCanales = opts.mostrarCanales !== false;
@@ -75,6 +76,15 @@
     if (this.canales.length) this.sintonizar(this.idx, false);
     else this.mensaje('Sin canales activos', 'El catálogo no tiene canales disponibles.');
   }
+
+  Monitor.prototype.notificarAudiencia = function (reproduciendo, finalizar) {
+    if (!this.onAudiencia) return;
+    var c = this.canales[this.idx], codigo = c && c.codigo || '';
+    var firma = codigo + '|' + reproduciendo + '|' + !!finalizar;
+    if (this._firmaAudiencia === firma) return;
+    this._firmaAudiencia = firma;
+    this.onAudiencia({ codigo: codigo, reproduciendo: !!reproduciendo, finalizar: !!finalizar });
+  };
 
   Monitor.prototype.render = function () {
     var self = this;
@@ -264,6 +274,7 @@
   };
 
   Monitor.prototype.limpiarMedia = function () {
+    this.notificarAudiencia(false);
     clearTimeout(this._programaT); this._programaT = null;
     clearTimeout(this._vigilaT); clearTimeout(this._reintentoT);
     if (this.hls) { try { this.hls.destroy(); } catch (e) {} this.hls = null; }
@@ -322,11 +333,12 @@
     this.el.media.appendChild(v);
     this.media = v;
     v.addEventListener('playing', function () {
-      if (self.media === v) self.estado('', '');
+      if (self.media === v) { self.estado('', ''); self.notificarAudiencia(true); }
     });
     v.addEventListener('waiting', function () {
-      if (self.media === v) self.estado('reconnecting', 'Recuperando señal…');
+      if (self.media === v) { self.estado('reconnecting', 'Recuperando señal…'); self.notificarAudiencia(false); }
     });
+    ['pause','ended','error','stalled'].forEach(function (evento) { v.addEventListener(evento, function () { if (self.media === v) self.notificarAudiencia(false); }); });
     var reproducir = function () {
       var p = v.play();
       if (p && p.catch) p.catch(function (err) {
@@ -506,7 +518,9 @@
         if (!m || m.tagName !== 'IFRAME' || event.source !== m.contentWindow) return;
         var d = null;
         try { d = typeof event.data === 'string' ? JSON.parse(event.data) : event.data; } catch (e) { return; }
+        if (d && d.event === 'onStateChange' && typeof d.info === 'number') self.notificarAudiencia(d.info === 1);
         if (d && d.event === 'infoDelivery' && d.info) {
+          if (typeof d.info.playerState === 'number') self.notificarAudiencia(d.info.playerState === 1);
           if (d.info.playerState === 1) {
             self._sonando = true;
             if (self.el.resume) self.el.resume.hidden = true;
@@ -591,6 +605,7 @@
   };
 
   Monitor.prototype.destroy = function () {
+    this.notificarAudiencia(false, true); this.onAudiencia = null;
     if (this._onYtMensaje) { window.removeEventListener('message', this._onYtMensaje); this._onYtMensaje = null; }
     if (this._onYtEstado) { window.removeEventListener('message', this._onYtEstado); this._onYtEstado = null; }
     this.cerrarPantallaCompleta();
