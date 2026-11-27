@@ -107,10 +107,11 @@
     var a=document.getElementById('sessionLink');a.textContent='TVD HUB';a.href=CFG.portalUrl;a.setAttribute('aria-label','Abrir portal TVD HUB');
   }
   function pintarIdentidad() {
-    var nombre=nombreApp(),marca=document.querySelector('.wordmark');
+    var insignia=contexto.modo==='EO'?insigniaActual():null,nombre=insignia?insignia.nombre:nombreApp(),marca=document.querySelector('.wordmark');
+    var urlLogo=(insignia&&insignia.logo)||(DATA.identidad&&DATA.identidad.logo)||'';
     document.title=nombre+' · TV Digital';marca.replaceChildren();
-    if(DATA.identidad && /^https:\/\//i.test(DATA.identidad.logo||'')) {
-      var logo=document.createElement('img');logo.className='context-logo';logo.alt='Logotipo de '+nombre;logo.src=DATA.identidad.logo;logo.onerror=function(){this.remove();};marca.append(logo);
+    if(/^https:\/\//i.test(urlLogo)) {
+      var logo=document.createElement('img');logo.className='context-logo';logo.alt='Logotipo de '+nombre;logo.src=urlLogo;logo.onerror=function(){this.remove();};marca.append(logo);
     }
     var palabras=nombre.toUpperCase().split(/\s+/),acento=document.createElement('span');acento.textContent=palabras.pop();
     var textoNombre=document.createElement('span');textoNombre.className='context-name';if(palabras.length)textoNombre.append(document.createTextNode(palabras.join(' ')+' '));textoNombre.append(acento);marca.append(textoNombre);marca.setAttribute('aria-label',nombre+', inicio');

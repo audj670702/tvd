@@ -21,6 +21,7 @@
       var url=String(c.rutaHls||c.senal||c.url||'').trim(),playlist=String(c.playlistYoutube||'').trim();
       var match=/[?&]list=([\w-]+)/.exec(playlist);if(match)playlist=match[1];
       return { codigo:codigo,numero:codigo.slice(2),nombre:String(c.nombre||codigo).slice(0,100),
+        logo:/^https:\/\//i.test(c.logo||'')?c.logo:'',
         tipo:tipo==='VPS'?'hls':'youtube',url:tipo==='VPS'&&/^https:\/\//i.test(url)?url:'',
         playlist:tipo==='VIRTUAL'&&/^[\w-]{8,}$/.test(playlist)?playlist:'',
         programa:tipo==='VIRTUAL'?programaDe(c,desfase):null,espacio:c.espacio||null,esInsigniaEO:c.esInsigniaEO===true,
