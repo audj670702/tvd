@@ -12,7 +12,7 @@
   function refresh(){if(display.matches||navigator.standalone===true){installed=true;recordar(true);}button.hidden=installed||display.matches||navigator.standalone===true;}
   function enlace(){var u=new URL(location.pathname,location.origin),params=new URLSearchParams(location.search),eo=params.get('eo')||params.get('codigoEO');if(eo)u.searchParams.set('eo',eo);u.hash='/inicio';return u.href;}
   function manifest(){
-    var base=new URL('.',location.href),m={id:enlace().split('#')[0],name:nombre,short_name:nombre.slice(0,20),start_url:enlace(),scope:base.href,display:'standalone',background_color:'#0E0F13',theme_color:'#0E0F13',lang:'es-MX',icons:[192,512].map(function(n){return {src:new URL('assets/icon-'+n+'.png',base).href,sizes:n+'x'+n,type:'image/png'};})};
+    var base=new URL('.',location.href),m={id:enlace().split('#')[0],name:nombre,short_name:nombre.slice(0,20),start_url:enlace(),scope:base.href,display:'standalone',background_color:'#0E0F13',theme_color:'#0E0F13',lang:'es-MX',icons:[192,512].map(function(n){return {src:new URL('assets/tvd-logo-'+n+'-v1.png',base).href,sizes:n+'x'+n,type:'image/png'};})};
     if(manifestUrl)URL.revokeObjectURL(manifestUrl);manifestUrl=URL.createObjectURL(new Blob([JSON.stringify(m)],{type:'application/manifest+json'}));document.querySelector('link[rel=manifest]').href=manifestUrl;
   }
   function guide(){
